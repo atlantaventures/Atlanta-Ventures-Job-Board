@@ -1,0 +1,5 @@
+anthropic
+gspread
+playwright
+python-dotenv
+requests
