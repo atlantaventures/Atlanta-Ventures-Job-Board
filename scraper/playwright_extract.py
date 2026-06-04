@@ -65,18 +65,13 @@ def normalize_function(raw: str) -> str:
 
 
 def normalize_location(raw: str) -> str:
-    """Map a raw location string to Remote / Hybrid / In Person, or ''."""
-    if not raw:
-        return ""
-    r = raw.lower().strip()
+    """Map a raw location string to Remote / Hybrid / In Person. Defaults to In Person."""
+    r = (raw or "").lower().strip()
     if "remote" in r:
         return "Remote"
     if "hybrid" in r:
         return "Hybrid"
-    if raw.strip():
-        # A non-empty location with no remote/hybrid signal is a physical office
-        return "In Person"
-    return ""
+    return "In Person"
 
 
 # ── ATS PLATFORM DETECTION ───────────────────────────────────────────────────
@@ -176,9 +171,15 @@ def get_page_content(page, url: str) -> str:
             .map(a => ({ text: a.innerText.trim(), href: a.href }))
             .filter(a => a.text && a.href && a.href.startsWith('http'))
     """)
-    text            = page.inner_text("body")
-    links_formatted = "\n".join(f"LINK: {l['text']} -> {l['href']}" for l in links if l["text"])
-    return f"PAGE TEXT:\n{text[:8000]}\n\nALL PAGE LINKS:\n{links_formatted[:6000]}"
+    text = page.inner_text("body")
+
+    # Prefer links whose path looks job-related so nav/footer links don't crowd out job URLs
+    job_path_hints = ["/job", "/career", "/opening", "/position", "/apply", "/role", "/vacancy", "/hire", "/posting", "/opportunity"]
+    job_links = [l for l in links if any(p in l["href"].lower() for p in job_path_hints)]
+    display_links = job_links if job_links else links
+    links_formatted = "\n".join(f"LINK: {l['text']} -> {l['href']}" for l in display_links if l["text"])
+
+    return f"PAGE TEXT:\n{text[:15000]}\n\nALL PAGE LINKS:\n{links_formatted[:10000]}"
 
 
 def extract_jobs_with_claude(client: anthropic.Anthropic, company: str, content: str) -> list:
@@ -187,9 +188,8 @@ def extract_jobs_with_claude(client: anthropic.Anthropic, company: str, content:
 Extract all job listings and return a JSON array where each item has exactly these fields:
 - "job_title": title of the role (string)
 - "application_url": direct URL to that specific job posting — match job titles to links in ALL PAGE LINKS. Use "" if not found. (string)
-- "job_location": MUST be exactly one of: "Remote", "Hybrid", "In Person". Use "" if not mentioned. (string)
+- "job_location": MUST be exactly one of: "Remote", "Hybrid", "In Person". Default to "In Person" if not explicitly mentioned. (string)
 - "job_function": MUST be exactly one of: "Engineering", "Sales", "Marketing", "Operations", "Finance". Use "" if none fits. (string)
-- "job_description": 1-2 sentence summary of the role, or "" if not enough info (string)
 - "is_evergreen": true ONLY for generic "always hiring" / "send us your resume" listings with no specific headcount — e.g. "General Application", "Join our talent pool". If there is a real job title and/or a direct URL to the posting, this is false. Default to false. (boolean)
 
 Rules:
@@ -203,7 +203,8 @@ Page content:
 """
     response = client.messages.create(
         model="claude-haiku-4-5-20251001",
-        max_tokens=3000,
+        max_tokens=5000,
+        temperature=0,
         messages=[{"role": "user", "content": prompt}],
     )
     text = response.content[0].text.strip()
@@ -215,10 +216,27 @@ Page content:
     for job in result:
         job["job_location"] = normalize_location(job.get("job_location", ""))
         job["job_function"] = normalize_function(job.get("job_function", ""))
+        job.pop("job_description", None)
         # A job with a direct URL is never evergreen — override Claude's guess
         if job.get("application_url"):
             job["is_evergreen"] = False
     return result
+
+
+# ── GENERIC LISTING FILTER ───────────────────────────────────────────────────
+
+_GENERIC_PATTERNS = [
+    "talent network", "talent pool", "talent community",
+    "general application", "open application", "general interest",
+    "future opportunities", "future openings", "future roles",
+    "join our team", "stay connected", "get in touch",
+    "not seeing a fit", "don't see a fit", "don't see your role",
+]
+
+def is_generic_listing(title: str) -> bool:
+    """Return True for broad 'always open' listings that aren't real job postings."""
+    t = title.lower().strip()
+    return any(p in t for p in _GENERIC_PATTERNS)
 
 
 # ── RELEVANCE FILTER ─────────────────────────────────────────────────────────
@@ -261,6 +279,7 @@ Return ONLY the JSON array, no explanation, no markdown."""
     response = client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=1500,
+        temperature=0,
         messages=[{"role": "user", "content": prompt}],
     )
     text = response.content[0].text.strip()
@@ -364,13 +383,32 @@ def main():
         })
 
         for i, (sheet_row, row) in enumerate(to_scrape, start=1):
-            company  = row["Company"]
-            url      = row["Careers URL"].strip()
-            platform = detect_platform(url)
+            company            = row["Company"]
+            url                = row["Careers URL"].strip()
+            evergreen_company  = str(row.get("Evergreen", "")).strip().lower() == "true"
+            platform           = detect_platform(url)
 
-            print(f"[{i}/{len(to_scrape)}] {company}  ({platform})")
+            print(f"[{i}/{len(to_scrape)}] {company}  ({'evergreen' if evergreen_company else platform})")
 
             try:
+                if evergreen_company:
+                    key = normalize_url(url)
+                    if key in existing_keys:
+                        print(f"    Already processed\n")
+                    else:
+                        jobs_ws.append_rows([[
+                            company, "View All Openings", url, "Engineering",
+                            True, "In Person", today, "",
+                        ]])
+                        existing_keys.add(key)
+                        total_jobs += 1
+                        success_count += 1
+                        print(f"    Added evergreen listing\n")
+                    companies_ws.update_cell(sheet_row, 4, today)
+                    if i < len(to_scrape):
+                        time.sleep(DELAY_SECONDS)
+                    continue
+
                 if platform == "greenhouse":
                     jobs = scrape_greenhouse(url)
                 elif platform == "lever":
@@ -383,6 +421,11 @@ def main():
                         continue
                     jobs = extract_jobs_with_claude(claude, company, content)
 
+                # Apply careers URL fallback before dedup so the key is consistent across runs
+                for j in jobs:
+                    if not j.get("application_url"):
+                        j["application_url"] = url
+
                 # Drop anything already processed in a prior run
                 unseen   = [j for j in jobs if job_key(company, j) not in existing_keys]
                 dupes    = len(jobs) - len(unseen)
@@ -394,8 +437,15 @@ def main():
                     fail_count += 1
                     continue
 
+                # Deterministic pre-filter: catch generic talent pool listings before Claude
+                pre_skipped = [j for j in unseen if is_generic_listing(j.get("job_title", ""))]
+                unseen      = [j for j in unseen if not is_generic_listing(j.get("job_title", ""))]
+                for j in pre_skipped:
+                    j["skip_reason"] = "Generic talent pool / always-open listing"
+
                 # Relevance filter
                 kept, skipped = filter_jobs_with_claude(claude, company, unseen)
+                skipped = pre_skipped + skipped
                 filtered_jobs += len(skipped)
 
                 summary = f"    {len(kept)} relevant"
@@ -412,7 +462,6 @@ def main():
                             j.get("job_title", ""),
                             j.get("application_url", ""),
                             j.get("job_function", ""),
-                            j.get("job_description", ""),
                             j.get("is_evergreen", False),
                             j.get("job_location", ""),
                             today,

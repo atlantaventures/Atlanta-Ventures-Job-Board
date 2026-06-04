@@ -19,10 +19,10 @@ SHEET_ID         = os.environ["SHEET_ID"]
 CREDENTIALS_FILE = Path(__file__).parent.parent / "config" / "google_credentials.json"
 BASE_DIR         = Path(__file__).parent
 
-COMPANIES_HEADERS = ["Company", "Status", "Careers URL", "Last Scraped"]
+COMPANIES_HEADERS = ["Company", "Evergreen", "Careers URL", "Last Scraped"]
 JOBS_HEADERS      = [
     "Company", "Job Title", "Application URL", "Function",
-    "Description", "Evergreen", "Location", "Scraped At", "WP Status",
+    "Evergreen", "Location", "Scraped At", "WP Status",
 ]
 SKIPPED_HEADERS   = ["Company", "Job Title", "Application URL", "Reason", "Scraped At"]
 
