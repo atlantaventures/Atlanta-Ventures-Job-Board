@@ -417,13 +417,56 @@ def main():
 
             try:
                 if evergreen_company:
-                    key = normalize_url(url)
+                    key          = normalize_url(url)
+                    custom_title = row.get("Custom Title", "").strip()
+                    description  = row.get("Description", "").strip()
+                    title        = custom_title if custom_title else "View All Openings"
                     if key in existing_keys:
-                        print(f"    Already processed\n")
+                        # Find the active (non-expired/removed) row to compare against.
+                        # Expired rows are skipped — comparing against them causes false updates.
+                        all_job_rows = jobs_ws.get_all_values()
+                        active_row   = None
+                        for j, jrow in enumerate(all_job_rows[1:], start=2):
+                            row_key   = normalize_url(jrow[2]) if len(jrow) > 2 else ""
+                            wp_status = jrow[7] if len(jrow) > 7 else ""
+                            if jrow[0] == company and row_key == key:
+                                if wp_status.lower() in ("expired", "removed"):
+                                    continue
+                                active_row = (j, jrow)
+                                break
+
+                        updated = False
+                        if active_row:
+                            j, jrow       = active_row
+                            current_title = jrow[1] if len(jrow) > 1 else ""
+                            current_desc  = jrow[8] if len(jrow) > 8 else ""
+                            if current_title != title or current_desc != description:
+                                jobs_ws.update_cell(j, 8, "expired")
+                                jobs_ws.append_rows([[
+                                    company, title, url, "Engineering",
+                                    True, "In Person", today, "", description,
+                                ]])
+                                total_jobs += 1
+                                success_count += 1
+                                updated = True
+                                print(f"    Updated evergreen listing\n")
+                        else:
+                            # All prior rows expired/removed — re-add fresh
+                            jobs_ws.append_rows([[
+                                company, title, url, "Engineering",
+                                True, "In Person", today, "", description,
+                            ]])
+                            total_jobs += 1
+                            success_count += 1
+                            updated = True
+                            print(f"    Re-added evergreen listing\n")
+
+                        if not updated:
+                            print(f"    Already processed (no changes)\n")
                     else:
                         jobs_ws.append_rows([[
-                            company, "View All Openings", url, "Engineering",
-                            True, "In Person", today, "",
+                            company, title, url, "Engineering",
+                            True, "In Person", today, "", description,
                         ]])
                         existing_keys.add(key)
                         total_jobs += 1

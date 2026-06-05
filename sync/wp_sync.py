@@ -40,13 +40,14 @@ HEADERS = {
 BATCH_SIZE = 10
 
 # Column indices in the Jobs tab (0-indexed)
-COL_COMPANY   = 0
-COL_TITLE     = 1
-COL_URL       = 2
-COL_FUNCTION  = 3
-COL_EVERGREEN = 4
-COL_LOCATION  = 5
-COL_WP_STATUS = 7  # column 8 in sheet (1-indexed)
+COL_COMPANY     = 0
+COL_TITLE       = 1
+COL_URL         = 2
+COL_FUNCTION    = 3
+COL_EVERGREEN   = 4
+COL_LOCATION    = 5
+COL_WP_STATUS   = 7  # column 8 in sheet (1-indexed)
+COL_DESCRIPTION = 8  # column 9 — only populated for evergreen companies
 
 
 def _chunks(lst, n):
@@ -96,7 +97,7 @@ def delete_job(post_id: int) -> bool:
 
 def _build_payload(job: dict) -> dict:
     evergreen = str(job["evergreen"]).strip().lower() == "true"
-    return {
+    payload = {
         "title":  job["title"],
         "status": "publish",
         "acf": {
@@ -107,6 +108,9 @@ def _build_payload(job: dict) -> dict:
             "job_company":  job["company"],
         },
     }
+    if job.get("description"):
+        payload["content"] = job["description"]
+    return payload
 
 
 def post_job(job: dict) -> bool:
@@ -216,6 +220,7 @@ def main():
             "function":        col(COL_FUNCTION),
             "evergreen":       col(COL_EVERGREEN),
             "location":        col(COL_LOCATION),
+            "description":     col(COL_DESCRIPTION),  # only set for evergreen; ignored for others
         }, title))
 
     # Second pass: post pending jobs in batches, fall back to individual if needed
