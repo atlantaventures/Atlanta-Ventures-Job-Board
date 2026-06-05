@@ -10,6 +10,7 @@ Run:
 import json
 import os
 import re
+import sys
 import time
 from datetime import date
 from pathlib import Path
@@ -21,6 +22,12 @@ from dotenv import find_dotenv, load_dotenv
 from playwright.sync_api import sync_playwright
 
 load_dotenv(find_dotenv())
+
+_REQUIRED_VARS = ["ANTHROPIC_API_KEY", "SHEET_ID"]
+_missing = [v for v in _REQUIRED_VARS if not os.environ.get(v)]
+if _missing:
+    print(f"ERROR: Missing required environment variables: {', '.join(_missing)}")
+    sys.exit(1)
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
@@ -213,7 +220,11 @@ Page content:
     text = response.content[0].text.strip()
     text = re.sub(r"^```[a-z]*\n?", "", text)
     text = re.sub(r"\n?```$", "", text)
-    result = json.loads(text)
+    try:
+        result = json.loads(text)
+    except json.JSONDecodeError:
+        print(f"    Claude returned invalid JSON for job extraction — skipping")
+        return []
     if not isinstance(result, list):
         return []
     for job in result:
@@ -288,7 +299,11 @@ Return ONLY the JSON array, no explanation, no markdown."""
     text = response.content[0].text.strip()
     text = re.sub(r"^```[a-z]*\n?", "", text)
     text = re.sub(r"\n?```$", "", text)
-    verdicts = json.loads(text)
+    try:
+        verdicts = json.loads(text)
+    except json.JSONDecodeError:
+        print(f"    Claude returned invalid JSON for relevance filter — keeping all {len(jobs)} jobs")
+        return jobs, []
 
     if len(verdicts) != len(jobs):
         print(f"    WARNING: Claude returned {len(verdicts)} verdicts for {len(jobs)} jobs — adjusting")
@@ -433,6 +448,7 @@ def main():
 
     success_count   = 0
     fail_count      = 0
+    error_count     = 0
     total_jobs      = 0
     duplicate_jobs  = 0
     filtered_jobs   = 0
@@ -608,7 +624,8 @@ def main():
 
             except Exception as e:
                 print(f"    FAILED — {e}\n")
-                fail_count += 1
+                fail_count  += 1
+                error_count += 1
 
             if i < len(to_scrape):
                 time.sleep(DELAY_SECONDS)
@@ -622,7 +639,11 @@ def main():
     print(f"  New jobs written to Jobs tab   : {total_jobs}")
     print(f"  Irrelevant jobs filtered out   : {filtered_jobs}")
     print(f"  Duplicates skipped             : {duplicate_jobs}")
+    if error_count:
+        print(f"  Script errors                  : {error_count}")
     print("=" * 50)
+    if error_count:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

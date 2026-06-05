@@ -16,6 +16,7 @@ Usage:
 """
 
 import os
+import sys
 import time
 from pathlib import Path
 
@@ -24,6 +25,12 @@ import requests
 from dotenv import find_dotenv, load_dotenv
 
 load_dotenv(find_dotenv())
+
+_REQUIRED_VARS = ["WP_URL", "WP_USERNAME", "WP_APP_PASSWORD", "SHEET_ID"]
+_missing = [v for v in _REQUIRED_VARS if not os.environ.get(v)]
+if _missing:
+    print(f"ERROR: Missing required environment variables: {', '.join(_missing)}")
+    sys.exit(1)
 
 WP_URL           = os.environ["WP_URL"].rstrip("/")
 WP_USERNAME      = os.environ["WP_USERNAME"]
@@ -266,6 +273,8 @@ def main():
     if delete_failed:
         print(f"  Del fail: {delete_failed}")
     print(f"{'=' * 40}")
+    if failed or delete_failed:
+        sys.exit(1)
 
 
 if __name__ == "__main__":
