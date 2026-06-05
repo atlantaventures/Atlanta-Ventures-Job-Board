@@ -125,8 +125,11 @@ def scrape_lever(url: str) -> list:
         timeout=10,
     )
     resp.raise_for_status()
+    data = resp.json()
+    if not isinstance(data, list):
+        return []
     jobs = []
-    for p in resp.json():
+    for p in data:
         title = p.get("text", "")
         team  = p.get("categories", {}).get("team", "")
         fn    = normalize_function(team) or normalize_function(title)
@@ -288,9 +291,10 @@ Return ONLY the JSON array, no explanation, no markdown."""
     verdicts = json.loads(text)
 
     if len(verdicts) != len(jobs):
-        print(f"    WARNING: Claude returned {len(verdicts)} verdicts for {len(jobs)} jobs — defaulting extras to KEEP")
+        print(f"    WARNING: Claude returned {len(verdicts)} verdicts for {len(jobs)} jobs — adjusting")
         while len(verdicts) < len(jobs):
             verdicts.append({"keep": True, "reason": "verdict missing", "function": ""})
+        verdicts = verdicts[:len(jobs)]
 
     kept    = []
     skipped = []
@@ -331,11 +335,18 @@ def load_existing_keys(*worksheets) -> set:
     Load all job keys already processed (Jobs tab + Skipped tab).
     Prevents re-adding or re-evaluating anything seen in a prior run.
     Application URL is always column C (index 2) in both tabs.
+
+    Expired and removed rows are excluded so that jobs which disappeared
+    and later reappear on the careers page can be re-scraped and re-synced.
+    The Skipped tab has no WP Status column, so its rows are always included.
     """
     keys = set()
     for ws in worksheets:
         rows = ws.get_all_values()
         for row in rows[1:]:
+            wp_status = row[7].strip().lower() if len(row) > 7 else ""
+            if wp_status in ("expired", "removed"):
+                continue
             company   = row[0] if len(row) > 0 else ""
             job_title = row[1] if len(row) > 1 else ""
             app_url   = row[2] if len(row) > 2 else ""
@@ -346,15 +357,15 @@ def load_existing_keys(*worksheets) -> set:
 
 # ── EXPIRY ───────────────────────────────────────────────────────────────────
 
-def expire_removed_jobs(jobs_ws, company: str, current_keys: set) -> int:
+def expire_removed_jobs(jobs_ws, company: str, current_keys: set, all_job_rows: list) -> int:
     """
     Mark Jobs tab rows 'expired' for jobs no longer found on the careers page.
     Only called when the fresh scrape returned at least one result.
+    Mutates all_job_rows in place to keep the in-memory copy current.
     Returns the number of rows marked expired.
     """
-    rows = jobs_ws.get_all_values()
     expired = 0
-    for i, row in enumerate(rows[1:], start=2):
+    for i, row in enumerate(all_job_rows[1:], start=2):
         if not row or row[0] != company:
             continue
         wp_status = row[7].strip().lower() if len(row) > 7 else ""
@@ -365,6 +376,31 @@ def expire_removed_jobs(jobs_ws, company: str, current_keys: set) -> int:
         key = normalize_url(app_url) if app_url else f"{company}|{title}".lower()
         if key and key not in current_keys:
             jobs_ws.update_cell(i, 8, "expired")
+            all_job_rows[i - 1][7] = "expired"
+            expired += 1
+    return expired
+
+
+def expire_stale_evergreen_rows(jobs_ws, company: str, current_key: str, all_job_rows: list) -> int:
+    """
+    Mark active Jobs tab rows for an evergreen company as expired when their
+    URL no longer matches the current Careers URL in the Companies tab.
+    This handles the case where a user updates the URL for an evergreen company —
+    without this, the old WP post would be orphaned and never cleaned up.
+    Mutates all_job_rows in place to keep the in-memory copy current.
+    Returns the number of rows marked expired.
+    """
+    expired = 0
+    for i, row in enumerate(all_job_rows[1:], start=2):
+        if not row or row[0] != company:
+            continue
+        wp_status = row[7].strip().lower() if len(row) > 7 else ""
+        if wp_status in ("expired", "removed"):
+            continue
+        row_key = normalize_url(row[2]) if len(row) > 2 else ""
+        if row_key and row_key != current_key:
+            jobs_ws.update_cell(i, 8, "expired")
+            all_job_rows[i - 1][7] = "expired"
             expired += 1
     return expired
 
@@ -382,6 +418,7 @@ def main():
     today         = date.today().isoformat()
     claude        = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     existing_keys = load_existing_keys(jobs_ws, skipped_ws)
+    all_job_rows  = jobs_ws.get_all_values()
 
     print(f"{len(existing_keys)} job(s) already processed — will skip duplicates\n")
 
@@ -421,11 +458,15 @@ def main():
                     custom_title = row.get("Custom Title", "").strip()
                     description  = row.get("Description", "").strip()
                     title        = custom_title if custom_title else "View All Openings"
+
+                    n_stale = expire_stale_evergreen_rows(jobs_ws, company, key, all_job_rows)
+                    if n_stale:
+                        print(f"    {n_stale} stale URL row(s) marked expired (Careers URL changed)")
+
                     if key in existing_keys:
                         # Find the active (non-expired/removed) row to compare against.
                         # Expired rows are skipped — comparing against them causes false updates.
-                        all_job_rows = jobs_ws.get_all_values()
-                        active_row   = None
+                        active_row = None
                         for j, jrow in enumerate(all_job_rows[1:], start=2):
                             row_key   = normalize_url(jrow[2]) if len(jrow) > 2 else ""
                             wp_status = jrow[7] if len(jrow) > 7 else ""
@@ -442,20 +483,19 @@ def main():
                             current_desc  = jrow[8] if len(jrow) > 8 else ""
                             if current_title != title or current_desc != description:
                                 jobs_ws.update_cell(j, 8, "expired")
-                                jobs_ws.append_rows([[
-                                    company, title, url, "Engineering",
-                                    True, "In Person", today, "", description,
-                                ]])
+                                all_job_rows[j - 1][7] = "expired"
+                                new_row = [company, title, url, "Engineering", True, "In Person", today, "", description]
+                                jobs_ws.append_rows([new_row])
+                                all_job_rows.append(new_row)
                                 total_jobs += 1
                                 success_count += 1
                                 updated = True
                                 print(f"    Updated evergreen listing\n")
                         else:
                             # All prior rows expired/removed — re-add fresh
-                            jobs_ws.append_rows([[
-                                company, title, url, "Engineering",
-                                True, "In Person", today, "", description,
-                            ]])
+                            new_row = [company, title, url, "Engineering", True, "In Person", today, "", description]
+                            jobs_ws.append_rows([new_row])
+                            all_job_rows.append(new_row)
                             total_jobs += 1
                             success_count += 1
                             updated = True
@@ -464,10 +504,9 @@ def main():
                         if not updated:
                             print(f"    Already processed (no changes)\n")
                     else:
-                        jobs_ws.append_rows([[
-                            company, title, url, "Engineering",
-                            True, "In Person", today, "", description,
-                        ]])
+                        new_row = [company, title, url, "Engineering", True, "In Person", today, "", description]
+                        jobs_ws.append_rows([new_row])
+                        all_job_rows.append(new_row)
                         existing_keys.add(key)
                         total_jobs += 1
                         success_count += 1
@@ -497,7 +536,7 @@ def main():
                 # Mark jobs no longer on the careers page as expired (guard: only if scrape returned results)
                 if jobs:
                     current_keys = {job_key(company, j) for j in jobs}
-                    n_expired = expire_removed_jobs(jobs_ws, company, current_keys)
+                    n_expired = expire_removed_jobs(jobs_ws, company, current_keys, all_job_rows)
                     if n_expired:
                         print(f"    {n_expired} job(s) marked expired")
 
@@ -531,7 +570,7 @@ def main():
                 print(summary + "\n")
 
                 if kept:
-                    jobs_ws.append_rows([
+                    new_rows = [
                         [
                             company,
                             j.get("job_title", ""),
@@ -543,7 +582,9 @@ def main():
                             "",  # WP Status — blank until sync script runs
                         ]
                         for j in kept
-                    ])
+                    ]
+                    jobs_ws.append_rows(new_rows)
+                    all_job_rows.extend(new_rows)
                     for j in kept:
                         existing_keys.add(job_key(company, j))
                     total_jobs += len(kept)

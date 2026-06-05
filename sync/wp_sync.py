@@ -196,10 +196,10 @@ def main():
                 else:
                     delete_failed += 1
                     print(f"  DELETE FAILED: {title}")
+                time.sleep(2)
             else:
+                # Already gone from WP — just clean up the sheet row
                 jobs_ws.update_cell(i, COL_WP_STATUS + 1, "removed")
-                deleted += 1
-            time.sleep(2)
             continue
 
         if wp_status.lower() in ("posted", "removed"):
