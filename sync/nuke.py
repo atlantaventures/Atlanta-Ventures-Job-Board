@@ -24,6 +24,13 @@ HEADERS = {
     "User-Agent":   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 }
 
+BATCH_SIZE = 10
+
+
+def _chunks(lst, n):
+    for i in range(0, len(lst), n):
+        yield lst[i:i + n]
+
 
 def get_all_job_ids():
     jobs = []
@@ -49,6 +56,32 @@ def get_all_job_ids():
     return jobs
 
 
+def delete_batch(job_ids: list):
+    """
+    DELETE a batch of jobs via /wp-json/batch/v1.
+    Returns a list of booleans (True = success) in input order,
+    or None if the batch endpoint is unavailable.
+    """
+    payload = {
+        "requests": [
+            {"method": "DELETE", "path": f"/wp/v2/av_job/{job_id}?force=true"}
+            for job_id in job_ids
+        ]
+    }
+    resp = requests.post(
+        f"{WP_URL}/wp-json/batch/v1",
+        json=payload,
+        auth=AUTH,
+        headers=HEADERS,
+        timeout=60,
+    )
+    if resp.status_code == 404:
+        return None
+    resp.raise_for_status()
+    responses = resp.json().get("responses", [])
+    return [r.get("status", 500) == 200 for r in responses]
+
+
 def main():
     print("Fetching all jobs from WordPress...")
     jobs = get_all_job_ids()
@@ -63,24 +96,46 @@ def main():
         print("Aborted.")
         return
 
-    deleted = 0
-    failed  = 0
-    for job in jobs:
-        resp = requests.delete(
-            f"{WP_URL}/wp-json/wp/v2/av_job/{job['id']}",
-            params={"force": True},
-            auth=AUTH,
-            headers=HEADERS,
-            timeout=30,
-        )
-        title = job["title"]["rendered"]
-        if resp.status_code == 200:
-            deleted += 1
-            print(f"  Deleted: {title}")
-        else:
-            failed += 1
-            print(f"  FAILED:  {title} — {resp.status_code}")
-        time.sleep(2)
+    deleted   = 0
+    failed    = 0
+    use_batch = True
+
+    for chunk in _chunks(jobs, BATCH_SIZE):
+        ids    = [j["id"] for j in chunk]
+        titles = [j["title"]["rendered"] for j in chunk]
+
+        if use_batch:
+            results = delete_batch(ids)
+            if results is None:
+                print("  Batch endpoint unavailable — switching to individual deletes")
+                use_batch = False
+            else:
+                for title, success in zip(titles, results):
+                    if success:
+                        deleted += 1
+                        print(f"  Deleted: {title}")
+                    else:
+                        failed += 1
+                        print(f"  FAILED:  {title}")
+                time.sleep(2)
+                continue
+
+        # Individual fallback
+        for job_id, title in zip(ids, titles):
+            resp = requests.delete(
+                f"{WP_URL}/wp-json/wp/v2/av_job/{job_id}",
+                params={"force": True},
+                auth=AUTH,
+                headers=HEADERS,
+                timeout=30,
+            )
+            if resp.status_code == 200:
+                deleted += 1
+                print(f"  Deleted: {title}")
+            else:
+                failed += 1
+                print(f"  FAILED:  {title} — {resp.status_code}")
+            time.sleep(2)
 
     print(f"\nDeleted {deleted}/{len(jobs)} jobs.")
     if failed:

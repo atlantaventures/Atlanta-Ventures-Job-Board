@@ -1,10 +1,15 @@
 """
 Syncs jobs from Google Sheets (Jobs tab) to WordPress.
 Only posts jobs not already on the site. Marks each row WP Status = "posted" on success.
+Expired rows get deleted from WP and marked "removed".
 
-Two dedup layers:
-  1. Sheet-side: skips rows already marked WP Status = "posted"
-  2. WordPress-side: fetches all existing application_url values before posting
+Dedup layers:
+  1. Sheet-side: skips rows already marked WP Status = "posted" or "removed"
+  2. WordPress-side: fetches all existing job_link values before posting
+
+Posting strategy:
+  - Attempts batch posts (up to BATCH_SIZE per HTTP request) via /wp-json/batch/v1
+  - Falls back to individual posts with a 2s delay if batch endpoint is unavailable
 
 Usage:
     python3 sync/wp_sync.py
@@ -32,6 +37,8 @@ HEADERS = {
     "User-Agent":   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 }
 
+BATCH_SIZE = 10
+
 # Column indices in the Jobs tab (0-indexed)
 COL_COMPANY   = 0
 COL_TITLE     = 1
@@ -40,6 +47,11 @@ COL_FUNCTION  = 3
 COL_EVERGREEN = 4
 COL_LOCATION  = 5
 COL_WP_STATUS = 7  # column 8 in sheet (1-indexed)
+
+
+def _chunks(lst, n):
+    for i in range(0, len(lst), n):
+        yield lst[i:i + n]
 
 
 def get_existing_wp_jobs() -> dict:
@@ -82,10 +94,9 @@ def delete_job(post_id: int) -> bool:
     return resp.status_code == 200
 
 
-def post_job(job: dict) -> bool:
-    """POST a single job to WordPress. Returns True on success."""
+def _build_payload(job: dict) -> dict:
     evergreen = str(job["evergreen"]).strip().lower() == "true"
-    payload = {
+    return {
         "title":  job["title"],
         "status": "publish",
         "acf": {
@@ -96,9 +107,13 @@ def post_job(job: dict) -> bool:
             "job_company":  job["company"],
         },
     }
+
+
+def post_job(job: dict) -> bool:
+    """POST a single job to WordPress. Returns True on success."""
     resp = requests.post(
         f"{WP_URL}/wp-json/wp/v2/av_job",
-        json=payload,
+        json=_build_payload(job),
         auth=AUTH,
         headers=HEADERS,
         timeout=30,
@@ -106,6 +121,32 @@ def post_job(job: dict) -> bool:
     if resp.status_code not in (200, 201):
         print(f"    HTTP {resp.status_code}: {resp.text[:200]}")
     return resp.status_code in (200, 201)
+
+
+def post_jobs_batch(jobs: list):
+    """
+    POST a batch of jobs via /wp-json/batch/v1.
+    Returns a list of booleans (True = success) in input order,
+    or None if the batch endpoint is unavailable.
+    """
+    payload = {
+        "requests": [
+            {"method": "POST", "path": "/wp/v2/av_job", "body": _build_payload(j)}
+            for j in jobs
+        ]
+    }
+    resp = requests.post(
+        f"{WP_URL}/wp-json/batch/v1",
+        json=payload,
+        auth=AUTH,
+        headers=HEADERS,
+        timeout=60,
+    )
+    if resp.status_code == 404:
+        return None  # endpoint not available — caller falls back to individual posts
+    resp.raise_for_status()
+    responses = resp.json().get("responses", [])
+    return [r.get("status", 500) in (200, 201) for r in responses]
 
 
 def main():
@@ -125,21 +166,23 @@ def main():
     existing_jobs = get_existing_wp_jobs()
     print(f"Found {len(existing_jobs)} jobs already on WordPress.\n")
 
-    posted  = 0
-    skipped = 0
-    failed  = 0
-    deleted = 0
+    posted        = 0
+    skipped       = 0
+    failed        = 0
+    deleted       = 0
     delete_failed = 0
 
-    for i, row in enumerate(data, start=2):  # start=2 accounts for header row
-        def col(idx):
-            return row[idx].strip() if len(row) > idx else ""
+    # First pass: handle expired deletions and collect rows that need posting
+    pending = []  # list of (sheet_row_index, job_dict, title)
+
+    for i, row in enumerate(data, start=2):
+        def col(idx, r=row):
+            return r[idx].strip() if len(r) > idx else ""
 
         wp_status = col(COL_WP_STATUS)
         app_url   = col(COL_URL)
         title     = col(COL_TITLE)
 
-        # Remove expired jobs from WordPress
         if wp_status.lower() == "expired":
             post_id = existing_jobs.get(app_url.rstrip("/").lower())
             if post_id:
@@ -152,7 +195,6 @@ def main():
                     delete_failed += 1
                     print(f"  DELETE FAILED: {title}")
             else:
-                # Never made it to WP — just mark removed in sheet
                 jobs_ws.update_cell(i, COL_WP_STATUS + 1, "removed")
                 deleted += 1
             time.sleep(2)
@@ -167,24 +209,51 @@ def main():
             skipped += 1
             continue
 
-        job = {
+        pending.append((i, {
             "company":         col(COL_COMPANY),
             "title":           title,
             "application_url": app_url,
             "function":        col(COL_FUNCTION),
             "evergreen":       col(COL_EVERGREEN),
             "location":        col(COL_LOCATION),
-        }
+        }, title))
 
-        if post_job(job):
-            jobs_ws.update_cell(i, COL_WP_STATUS + 1, "posted")
-            existing_jobs[app_url.rstrip("/").lower()] = -1  # placeholder, ID not needed
-            posted += 1
-            print(f"  Posted:  {title}")
-        else:
-            failed += 1
-            print(f"  FAILED:  {title}")
-        time.sleep(2)
+    # Second pass: post pending jobs in batches, fall back to individual if needed
+    if pending:
+        print(f"Posting {len(pending)} new job(s)...\n")
+
+    use_batch = True
+    for chunk in _chunks(pending, BATCH_SIZE):
+        chunk_jobs  = [j for _, j, _ in chunk]
+        chunk_meta  = [(i, t) for i, _, t in chunk]
+
+        if use_batch:
+            results = post_jobs_batch(chunk_jobs)
+            if results is None:
+                print("  Batch endpoint unavailable — switching to individual posts")
+                use_batch = False
+            else:
+                for (row_i, title), success in zip(chunk_meta, results):
+                    if success:
+                        jobs_ws.update_cell(row_i, COL_WP_STATUS + 1, "posted")
+                        posted += 1
+                        print(f"  Posted:  {title}")
+                    else:
+                        failed += 1
+                        print(f"  FAILED:  {title}")
+                time.sleep(2)
+                continue
+
+        # Individual fallback
+        for (row_i, title), job in zip(chunk_meta, chunk_jobs):
+            if post_job(job):
+                jobs_ws.update_cell(row_i, COL_WP_STATUS + 1, "posted")
+                posted += 1
+                print(f"  Posted:  {title}")
+            else:
+                failed += 1
+                print(f"  FAILED:  {title}")
+            time.sleep(2)
 
     print(f"\n{'=' * 40}")
     print(f"  Posted  : {posted}")
