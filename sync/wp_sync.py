@@ -97,20 +97,18 @@ def delete_job(post_id: int) -> bool:
 
 def _build_payload(job: dict) -> dict:
     evergreen = str(job["evergreen"]).strip().lower() == "true"
-    payload = {
+    return {
         "title":  job["title"],
         "status": "publish",
         "acf": {
-            "job_link":     job["application_url"],
-            "job_function": job["function"],
-            "job_location": job["location"],
-            "is_evergreen": evergreen,
-            "job_company":  job["company"],
+            "job_link":        job["application_url"],
+            "job_function":    job["function"],
+            "job_location":    job["location"],
+            "is_evergreen":    evergreen,
+            "job_company":     job["company"],
+            "job_description": job.get("description", ""),
         },
     }
-    if job.get("description"):
-        payload["content"] = job["description"]
-    return payload
 
 
 def post_job(job: dict) -> bool:
