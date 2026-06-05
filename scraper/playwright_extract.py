@@ -344,6 +344,31 @@ def load_existing_keys(*worksheets) -> set:
     return keys
 
 
+# ── EXPIRY ───────────────────────────────────────────────────────────────────
+
+def expire_removed_jobs(jobs_ws, company: str, current_keys: set) -> int:
+    """
+    Mark Jobs tab rows 'expired' for jobs no longer found on the careers page.
+    Only called when the fresh scrape returned at least one result.
+    Returns the number of rows marked expired.
+    """
+    rows = jobs_ws.get_all_values()
+    expired = 0
+    for i, row in enumerate(rows[1:], start=2):
+        if not row or row[0] != company:
+            continue
+        wp_status = row[7].strip().lower() if len(row) > 7 else ""
+        if wp_status in ("expired", "removed"):
+            continue
+        app_url = row[2].strip() if len(row) > 2 else ""
+        title   = row[1].strip() if len(row) > 1 else ""
+        key = normalize_url(app_url) if app_url else f"{company}|{title}".lower()
+        if key and key not in current_keys:
+            jobs_ws.update_cell(i, 8, "expired")
+            expired += 1
+    return expired
+
+
 # ── MAIN ─────────────────────────────────────────────────────────────────────
 
 def main():
@@ -425,6 +450,13 @@ def main():
                 for j in jobs:
                     if not j.get("application_url"):
                         j["application_url"] = url
+
+                # Mark jobs no longer on the careers page as expired (guard: only if scrape returned results)
+                if jobs:
+                    current_keys = {job_key(company, j) for j in jobs}
+                    n_expired = expire_removed_jobs(jobs_ws, company, current_keys)
+                    if n_expired:
+                        print(f"    {n_expired} job(s) marked expired")
 
                 # Drop anything already processed in a prior run
                 unseen   = [j for j in jobs if job_key(company, j) not in existing_keys]
