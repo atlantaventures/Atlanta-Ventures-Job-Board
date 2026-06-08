@@ -161,7 +161,14 @@ def post_jobs_batch(jobs: list):
 def main():
     gc = gspread.service_account(filename=str(CREDENTIALS_FILE))
     sh = gc.open_by_key(SHEET_ID)
-    jobs_ws = sh.worksheet("Jobs")
+    companies_ws = sh.worksheet("Companies")
+    jobs_ws      = sh.worksheet("Jobs")
+
+    active_companies = {
+        r["Company"].strip()
+        for r in companies_ws.get_all_records()
+        if r.get("Company", "").strip()
+    }
 
     rows = jobs_ws.get_all_values()
     if len(rows) <= 1:
@@ -170,6 +177,14 @@ def main():
 
     data = rows[1:]  # skip header
     print(f"Found {len(data)} jobs in sheet.")
+
+    # Mark jobs for deleted companies as expired so the main loop removes them from WP
+    for i, row in enumerate(data, start=2):
+        company   = row[COL_COMPANY].strip()  if len(row) > COL_COMPANY   else ""
+        wp_status = row[COL_WP_STATUS].strip() if len(row) > COL_WP_STATUS else ""
+        if company and company not in active_companies and wp_status.lower() not in ("expired", "removed"):
+            jobs_ws.update_cell(i, COL_WP_STATUS + 1, "expired")
+            row[COL_WP_STATUS] = "expired"
 
     print("Fetching existing jobs from WordPress...")
     existing_jobs = get_existing_wp_jobs()

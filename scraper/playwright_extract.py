@@ -74,7 +74,7 @@ def normalize_function(raw: str) -> str:
 def normalize_location(raw: str) -> str:
     """Map a raw location string to Remote / Hybrid / In Person. Defaults to In Person."""
     r = (raw or "").lower().strip()
-    if "remote" in r:
+    if any(k in r for k in ["remote", "work from home", "wfh", "anywhere", "distributed", "virtual", "nationwide", "us only", "worldwide", "global"]):
         return "Remote"
     if "hybrid" in r:
         return "Hybrid"
@@ -140,13 +140,23 @@ def scrape_lever(url: str) -> list:
         title = p.get("text", "")
         team  = p.get("categories", {}).get("team", "")
         fn    = normalize_function(team) or normalize_function(title)
+        workplace = p.get("workplaceType", "").lower()
+        if workplace == "remote":
+            loc = "Remote"
+        elif workplace == "hybrid":
+            loc = "Hybrid"
+        elif workplace == "on-site":
+            loc = "In Person"
+        else:
+            loc = normalize_location(p.get("categories", {}).get("location", ""))
+
         jobs.append({
             "job_title":       title,
             "application_url": p.get("hostedUrl", ""),
             "job_function":    fn,
             "job_description": "",
             "is_evergreen":    False,
-            "job_location":    normalize_location(p.get("categories", {}).get("location", "")),
+            "job_location":    loc,
         })
     return jobs
 
@@ -198,7 +208,7 @@ def extract_jobs_with_claude(client: anthropic.Anthropic, company: str, content:
 Extract all job listings and return a JSON array where each item has exactly these fields:
 - "job_title": title of the role (string)
 - "application_url": direct URL to that specific job posting — match job titles to links in ALL PAGE LINKS. Use "" if not found. (string)
-- "job_location": MUST be exactly one of: "Remote", "Hybrid", "In Person". Default to "In Person" if not explicitly mentioned. (string)
+- "job_location": MUST be exactly one of: "Remote", "Hybrid", "In Person". Default to "In Person" if unclear. "Work From Home", "WFH", "Anywhere", "Distributed" = Remote. A location that says "[City] (preferred) or Remote" = "In Person". (string)
 - "job_function": MUST be exactly one of: "Engineering", "Sales", "Marketing", "Operations", "Finance". Use "" if none fits. (string)
 - "is_evergreen": true ONLY for generic "always hiring" / "send us your resume" listings with no specific headcount — e.g. "General Application", "Join our talent pool". If there is a real job title and/or a direct URL to the posting, this is false. Default to false. (boolean)
 
