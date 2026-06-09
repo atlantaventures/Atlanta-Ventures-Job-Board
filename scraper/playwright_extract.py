@@ -57,16 +57,17 @@ def normalize_function(raw: str) -> str:
         if f.lower() == r:
             return f
     # Finance first — must precede Engineering to catch "Financial Analyst", "Accounting", etc.
-    if any(k in r for k in ["financ", "accounting", "invest", "treasury", "fp&a", "controller"]):
+    if any(k in r for k in ["financ", "accounting", "invest", "treasury", "fp&a", "controller", "audit", "tax", "payroll"]):
         return "Finance"
     # "developer" not "develop" — avoids matching "Sales Development Representative"
-    if any(k in r for k in ["engineer", "developer", "software", "data", "product", "design", "qa", "devops", "infra", "security", "techni", "tech lead", "tech manager", "ai", "ml", "machine learn", "platform", "ux", "research"]):
+    # "program manag" checked in Operations; "architect" here catches Solutions/Data Architects
+    if any(k in r for k in ["engineer", "developer", "software", "data", "product", "design", "qa", "devops", "infra", "security", "techni", "tech lead", "tech manager", "ai", "ml", "machine learn", "platform", "ux", "research", "robotics", "hardware", "mechanical", "electrical", "embedded", "firmware", "architect", "analytic", "scientist", "manufactur", "programmer"]):
         return "Engineering"
     if any(k in r for k in ["sale", "business dev", "account exec", "revenue", "bdr", "sdr"]):
         return "Sales"
-    if any(k in r for k in ["market", "growth", "brand", "content", "seo", "demand"]):
+    if any(k in r for k in ["market", "growth", "brand", "content", "seo", "demand", "communicat", "public relation", "social media", "advert"]):
         return "Marketing"
-    if any(k in r for k in ["operat", "people", "human res", "recruit", "admin", "customer success", "support", "legal", "compli", "implement", "general manager", "event", "relation", "coordinator", "specialist"]):
+    if any(k in r for k in ["operat", "people", "human res", "recruit", "admin", "customer success", "support", "legal", "compli", "implement", "general manager", "event", "relation", "coordinator", "specialist", "project", "program manag", "procure", "supply chain", "logistic", "talent", "facilit"]):
         return "Operations"
     return ""
 
@@ -88,6 +89,8 @@ def detect_platform(url: str) -> str:
         return "greenhouse"
     if "lever.co" in url:
         return "lever"
+    if "docs.google.com/document" in url:
+        return "googledoc"
     return "custom"
 
 
@@ -161,6 +164,23 @@ def scrape_lever(url: str) -> list:
     return jobs
 
 
+# ── GOOGLE DOC SCRAPER ───────────────────────────────────────────────────────
+
+def scrape_google_doc(client: anthropic.Anthropic, company: str, url: str) -> list:
+    doc_id = _slug(r"/document/d/([a-zA-Z0-9_-]+)", url)
+    if not doc_id:
+        return []
+    resp = requests.get(
+        f"https://docs.google.com/document/d/{doc_id}/export?format=txt",
+        timeout=15,
+    )
+    resp.raise_for_status()
+    text = resp.text.strip()
+    if not text:
+        return []
+    return extract_jobs_with_claude(client, company, f"PAGE TEXT:\n{text[:15000]}\n\nALL PAGE LINKS:")
+
+
 # ── PLAYWRIGHT + CLAUDE (custom pages) ───────────────────────────────────────
 
 def get_page_content(page, url: str) -> str:
@@ -209,7 +229,7 @@ Extract all job listings and return a JSON array where each item has exactly the
 - "job_title": title of the role (string)
 - "application_url": direct URL to that specific job posting — match job titles to links in ALL PAGE LINKS. Use "" if not found. (string)
 - "job_location": MUST be exactly one of: "Remote", "Hybrid", "In Person". Default to "In Person" if unclear. "Work From Home", "WFH", "Anywhere", "Distributed" = Remote. A location that says "[City] (preferred) or Remote" = "In Person". (string)
-- "job_function": MUST be exactly one of: "Engineering", "Sales", "Marketing", "Operations", "Finance". Use "" if none fits. (string)
+- "job_function": MUST be exactly one of: "Engineering", "Sales", "Marketing", "Operations", "Finance". Use "" if none fits. Engineering = software/data/AI/infra/product/design/QA/robotics/hardware/architecture/analytics/science/manufacturing. Sales = AEs/SDRs/BDRs/revenue/account exec. Marketing = demand gen/brand/content/growth/SEO/communications/PR/social media/advertising. Finance = accounting/FP&A/audit/tax/payroll/treasury. Operations = everything else (HR/recruiting/talent/legal/customer success/project management/program management/procurement/supply chain/logistics/facilities/compliance/implementation/events). (string)
 - "is_evergreen": true ONLY for generic "always hiring" / "send us your resume" listings with no specific headcount — e.g. "General Application", "Join our talent pool". If there is a real job title and/or a direct URL to the posting, this is false. Default to false. (boolean)
 
 Rules:
@@ -284,11 +304,11 @@ SKIP if the role is a service, trade, manual labor, or part-time non-professiona
 KEEP if the role is a professional business position. When in doubt, KEEP.
 
 Function must be exactly one of these 5 values:
-- "Engineering" — software, data, AI/ML, infrastructure, product, design, QA
-- "Sales" — AEs, SDRs, BDRs, account management, revenue
-- "Marketing" — demand gen, brand, content, growth, SEO
-- "Finance" — accounting, FP&A, financial analysis, treasury, controller
-- "Operations" — everything else: HR, recruiting, legal, customer success, project/program management, general management, events, implementation, compliance, specialist roles
+- "Engineering" — software, data, AI/ML, infrastructure, product, design, QA, robotics, hardware, mechanical, electrical, embedded, solutions/data architect, analytics, research scientist, manufacturing, programmer
+- "Sales" — AEs, SDRs, BDRs, account management, account executive, revenue, business development
+- "Marketing" — demand gen, brand, content, growth, SEO, communications, PR, public relations, social media, advertising
+- "Finance" — accounting, FP&A, financial analysis, treasury, controller, audit, tax, payroll
+- "Operations" — everything else: HR, recruiting, talent acquisition, legal, customer success, project management, program management, procurement, supply chain, logistics, facilities, general management, events, implementation, compliance, specialist roles
 
 Use "" only if the title gives no useful signal at all.
 
@@ -348,9 +368,11 @@ def normalize_url(url: str) -> str:
 
 
 def job_key(company: str, job: dict) -> str:
-    """Primary key is the normalized URL; fall back to company+title if no URL."""
-    url = normalize_url(job.get("application_url", ""))
-    if url:
+    """Primary key is the normalized URL; fall back to company+title if no URL or if the URL
+    is a Google Doc (shared across all jobs from that doc, so not a unique identifier)."""
+    app_url = job.get("application_url", "")
+    url = normalize_url(app_url)
+    if url and "docs.google.com" not in app_url:
         return url
     return f"{company}|{job.get('job_title', '')}".lower()
 
@@ -375,7 +397,8 @@ def load_existing_keys(*worksheets) -> set:
             company   = row[0] if len(row) > 0 else ""
             job_title = row[1] if len(row) > 1 else ""
             app_url   = row[2] if len(row) > 2 else ""
-            url_norm  = normalize_url(app_url)
+            is_gdoc   = "docs.google.com" in app_url
+            url_norm  = normalize_url(app_url) if not is_gdoc else ""
             keys.add(url_norm if url_norm else f"{company}|{job_title}".lower())
     return keys
 
@@ -398,7 +421,8 @@ def expire_removed_jobs(jobs_ws, company: str, current_keys: set, all_job_rows: 
             continue
         app_url = row[2].strip() if len(row) > 2 else ""
         title   = row[1].strip() if len(row) > 1 else ""
-        key = normalize_url(app_url) if app_url else f"{company}|{title}".lower()
+        is_gdoc = "docs.google.com" in app_url
+        key = (normalize_url(app_url) if (app_url and not is_gdoc) else f"{company}|{title}".lower())
         if key and key not in current_keys:
             jobs_ws.update_cell(i, 8, "expired")
             all_job_rows[i - 1][7] = "expired"
@@ -546,6 +570,8 @@ def main():
                     jobs = scrape_greenhouse(url)
                 elif platform == "lever":
                     jobs = scrape_lever(url)
+                elif platform == "googledoc":
+                    jobs = scrape_google_doc(claude, company, url)
                 else:
                     content = get_page_content(page, url)
                     if not content.strip():

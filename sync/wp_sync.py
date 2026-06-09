@@ -62,6 +62,19 @@ def _chunks(lst, n):
         yield lst[i:i + n]
 
 
+def _sheets_write(fn, *args, **kwargs):
+    """Call a gspread write method, retrying once on 429 quota errors."""
+    for attempt in range(3):
+        try:
+            return fn(*args, **kwargs)
+        except gspread.exceptions.APIError as e:
+            if "429" in str(e) and attempt < 2:
+                print("    Sheets rate limit — waiting 60s...")
+                time.sleep(60)
+            else:
+                raise
+
+
 def get_existing_wp_jobs() -> dict:
     """Fetch all av_job posts from WordPress. Returns {normalized_url: post_id}."""
     jobs = {}
@@ -183,7 +196,7 @@ def main():
         company   = row[COL_COMPANY].strip()  if len(row) > COL_COMPANY   else ""
         wp_status = row[COL_WP_STATUS].strip() if len(row) > COL_WP_STATUS else ""
         if company and company not in active_companies and wp_status.lower() not in ("expired", "removed"):
-            jobs_ws.update_cell(i, COL_WP_STATUS + 1, "expired")
+            _sheets_write(jobs_ws.update_cell,i, COL_WP_STATUS + 1, "expired")
             row[COL_WP_STATUS] = "expired"
 
     print("Fetching existing jobs from WordPress...")
@@ -211,7 +224,7 @@ def main():
             post_id = existing_jobs.get(app_url.rstrip("/").lower())
             if post_id:
                 if delete_job(post_id):
-                    jobs_ws.update_cell(i, COL_WP_STATUS + 1, "removed")
+                    _sheets_write(jobs_ws.update_cell,i, COL_WP_STATUS + 1, "removed")
                     del existing_jobs[app_url.rstrip("/").lower()]
                     deleted += 1
                     print(f"  Removed: {title}")
@@ -221,7 +234,7 @@ def main():
                 time.sleep(2)
             else:
                 # Already gone from WP — just clean up the sheet row
-                jobs_ws.update_cell(i, COL_WP_STATUS + 1, "removed")
+                _sheets_write(jobs_ws.update_cell,i, COL_WP_STATUS + 1, "removed")
             continue
 
         if wp_status.lower() in ("posted", "removed"):
@@ -229,7 +242,7 @@ def main():
             continue
 
         if app_url.rstrip("/").lower() in existing_jobs:
-            jobs_ws.update_cell(i, COL_WP_STATUS + 1, "posted")
+            _sheets_write(jobs_ws.update_cell,i, COL_WP_STATUS + 1, "posted")
             skipped += 1
             continue
 
@@ -260,7 +273,7 @@ def main():
             else:
                 for (row_i, title), success in zip(chunk_meta, results):
                     if success:
-                        jobs_ws.update_cell(row_i, COL_WP_STATUS + 1, "posted")
+                        _sheets_write(jobs_ws.update_cell,row_i, COL_WP_STATUS + 1, "posted")
                         posted += 1
                         print(f"  Posted:  {title}")
                     else:
@@ -272,7 +285,7 @@ def main():
         # Individual fallback
         for (row_i, title), job in zip(chunk_meta, chunk_jobs):
             if post_job(job):
-                jobs_ws.update_cell(row_i, COL_WP_STATUS + 1, "posted")
+                _sheets_write(jobs_ws.update_cell,row_i, COL_WP_STATUS + 1, "posted")
                 posted += 1
                 print(f"  Posted:  {title}")
             else:
