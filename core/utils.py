@@ -9,6 +9,8 @@ def detect_platform(url: str) -> str:
         return "lever"
     if "docs.google.com/document" in url:
         return "googledoc"
+    if re.search(r"drive\.google\.com/(file/d/|uc\?)", url):
+        return "pdf"
     lower = url.lower()
     if lower.endswith(".pdf") or re.search(r"\.pdf[?#]", lower):
         return "pdf"

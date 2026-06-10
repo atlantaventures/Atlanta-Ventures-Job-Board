@@ -8,8 +8,17 @@ import requests
 from core.normalize import normalize_function, normalize_location
 
 
+def _normalize_pdf_url(url: str) -> str:
+    """Convert a Google Drive share link to a direct download URL."""
+    m = re.search(r"drive\.google\.com/file/d/([^/?#]+)", url)
+    if m:
+        return f"https://drive.google.com/uc?export=download&id={m.group(1)}"
+    return url
+
+
 def scrape_pdf(client: anthropic.Anthropic, company: str, url: str) -> list:
     """Download a PDF and use Claude's native document support to extract job listings."""
+    url = _normalize_pdf_url(url)
     resp = requests.get(
         url, timeout=30,
         headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"},
