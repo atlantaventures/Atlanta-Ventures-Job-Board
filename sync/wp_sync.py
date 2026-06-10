@@ -180,7 +180,7 @@ def main():
     active_companies = {
         r["Company"].strip()
         for r in companies_ws.get_all_records()
-        if r.get("Company", "").strip()
+        if r.get("Company", "").strip() and r.get("Careers URL", "").strip()
     }
 
     rows = jobs_ws.get_all_values()
