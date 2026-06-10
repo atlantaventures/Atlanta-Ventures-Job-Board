@@ -112,6 +112,9 @@ def main():
                             fetched = scrape_google_doc(claude, company, url)
                         elif platform == "pdf":
                             fetched = scrape_pdf(claude, company, url)
+                        elif platform == "linkedin":
+                            print(f"    LinkedIn not supported — add a direct career page URL for {company}")
+                            continue
                         else:
                             content = scraper.get_content(url)
                             if not content.strip():
