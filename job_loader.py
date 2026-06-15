@@ -180,6 +180,20 @@ def main():
     if error_count:
         print(f"  Script errors                  : {error_count}")
     print("=" * 50)
+
+    import json
+    Path("/tmp/run_stats.json").write_text(json.dumps({
+        "date":               today,
+        "companies_scraped":  len(to_scrape),
+        "companies_with_jobs": success_count,
+        "companies_no_jobs":  fail_count,
+        "new_jobs_found":     total_jobs,
+        "filtered_out":       filtered_jobs,
+        "duplicates_skipped": duplicate_jobs,
+        "errors":             error_count,
+        "scraper_ok":         error_count == 0,
+    }))
+
     if error_count:
         sys.exit(1)
 

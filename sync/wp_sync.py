@@ -301,6 +301,20 @@ def main():
     if delete_failed:
         print(f"  Del fail: {delete_failed}")
     print(f"{'=' * 40}")
+
+    import json
+    stats_path = Path("/tmp/run_stats.json")
+    existing   = json.loads(stats_path.read_text()) if stats_path.exists() else {}
+    existing.update({
+        "wp_posted":       posted,
+        "wp_removed":      deleted,
+        "wp_skipped":      skipped,
+        "wp_failed":       failed,
+        "wp_delete_failed": delete_failed,
+        "wp_ok":           not (failed or delete_failed),
+    })
+    stats_path.write_text(json.dumps(existing))
+
     if failed or delete_failed:
         sys.exit(1)
 
