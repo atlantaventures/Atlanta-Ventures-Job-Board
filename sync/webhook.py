@@ -168,9 +168,7 @@ def approve_job():
         today = date.today().isoformat()
         jobs_ws.append_rows([[company, title, app_url, function, False, location, today, "posted"]])
         if skipped_row:
-            # Append a note in the Reason column so the Skipped row is clearly resolved
-            reason_col = 4  # column D (1-indexed)
-            skipped_ws.update_cell(skipped_row, reason_col, "manually approved")
+            skipped_ws.delete_rows(skipped_row)
     except Exception as e:
         # WP post succeeded — don't fail the whole request over a sheet write error
         print(f"Sheet update error after approve: {e}")
