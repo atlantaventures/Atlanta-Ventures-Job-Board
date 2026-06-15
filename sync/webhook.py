@@ -106,6 +106,7 @@ def _post_to_wp(company: str, title: str, url: str, function: str, location: str
     )
     if resp.status_code in (200, 201):
         return resp.json().get("id")
+    print(f"WordPress post failed: {resp.status_code} {resp.text[:500]}")
     return None
 
 
