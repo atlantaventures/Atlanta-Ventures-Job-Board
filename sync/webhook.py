@@ -41,7 +41,10 @@ WEBHOOK_SECRET  = os.environ["WEBHOOK_SECRET"]
 
 CREDENTIALS_FILE = Path(__file__).parent.parent / "config" / "google_credentials.json"
 WP_AUTH    = (WP_USERNAME, WP_APP_PASSWORD)
-WP_HEADERS = {"Content-Type": "application/json"}
+WP_HEADERS = {
+    "Content-Type": "application/json",
+    "User-Agent":   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+}
 
 # Column indices for the Jobs tab (0-indexed)
 COL_WP_STATUS = 7
