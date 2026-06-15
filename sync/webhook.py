@@ -13,8 +13,10 @@ Start:
 All requests must include the header:  X-Secret: <WEBHOOK_SECRET from .env>
 """
 
+import logging
 import os
 import subprocess
+import sys
 import threading
 from pathlib import Path
 
@@ -50,6 +52,9 @@ WP_HEADERS = {
 COL_WP_STATUS = 7
 
 app = Flask(__name__)
+
+_wz = logging.getLogger("werkzeug")
+_wz.handlers = [logging.StreamHandler(sys.stdout)]
 
 
 def _check_secret():

@@ -3,122 +3,110 @@
 // Extensions → Apps Script → paste this → Save → run onOpen once to authorize
 //
 // Fill in WEBHOOK_BASE and WEBHOOK_SECRET before using.
-// WEBHOOK_BASE should be your Digital Ocean server IP or domain, e.g.:
-//   const WEBHOOK_BASE = 'http://123.456.78.90:5001';
 // ============================================================
 
-const WEBHOOK_BASE   = 'YOUR_DO_IP_OR_DOMAIN';  // e.g. 'http://123.456.78.90:5001'
-const WEBHOOK_SECRET = 'YOUR_WEBHOOK_SECRET';    // must match WEBHOOK_SECRET in .env on the server
+const WEBHOOK_BASE   = 'YOUR_DO_IP_OR_DOMAIN';
+const WEBHOOK_SECRET = 'YOUR_WEBHOOK_SECRET';
 
 // ---------------------------------------------------------------------------
 
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Job Board')
-    .addItem('Approve job → push to WordPress', 'approveJob')
-    .addItem('Remove job from WordPress', 'removeJob')
+    .addItem('Approve job(s) → push to WordPress', 'approveJob')
+    .addItem('Remove job(s) from WordPress', 'removeJob')
     .addSeparator()
     .addItem('Run scraper now', 'runScraper')
     .addToUi();
 }
 
 // ---------------------------------------------------------------------------
-// Approve a skipped job and post it to WordPress.
-// How to use: go to the Skipped tab, click any cell in the row you want, then
-// Job Board → Approve job.
+// Approve one or more skipped jobs and post them to WordPress.
+// How to use: go to the Skipped tab, select one or more rows, then
+// Job Board → Approve job(s).
 // ---------------------------------------------------------------------------
 function approveJob() {
   const ui    = SpreadsheetApp.getUi();
   const sheet = SpreadsheetApp.getActiveSheet();
 
   if (sheet.getName() !== 'Skipped') {
-    ui.alert('Wrong tab', 'Go to the Skipped tab first, then click the row you want to approve.', ui.ButtonSet.OK);
+    ui.alert('Wrong tab', 'Go to the Skipped tab first, then select the row(s) you want to approve.', ui.ButtonSet.OK);
     return;
   }
 
-  const row = sheet.getActiveRange().getRow();
-  if (row <= 1) {
-    ui.alert('Select a job row (not the header).');
-    return;
-  }
+  const jobs = _selectedJobs(sheet);
+  if (!jobs) return;
 
-  const company = sheet.getRange(row, 1).getValue();
-  const title   = sheet.getRange(row, 2).getValue();
-  const url     = sheet.getRange(row, 3).getValue();
+  const label = jobs.length === 1
+    ? `"${jobs[0].title}" (${jobs[0].company})`
+    : `${jobs.length} jobs`;
 
-  if (!company || !title) {
-    ui.alert('Could not read job data from this row. Make sure a job row is selected.');
-    return;
-  }
-
-  const confirm = ui.alert(
-    'Approve job',
-    `Post "${title}" (${company}) to WordPress?`,
-    ui.ButtonSet.YES_NO
-  );
+  const confirm = ui.alert('Approve job', `Post ${label} to WordPress?`, ui.ButtonSet.YES_NO);
   if (confirm !== ui.Button.YES) return;
 
-  const result = _post(WEBHOOK_BASE + '/approve-job', {
-    company:         company,
-    job_title:       title,
-    application_url: url,
-    row_number:      row,
-  });
+  // Process bottom-to-top so row deletions don't shift the indices of rows
+  // we haven't processed yet.
+  jobs.sort((a, b) => b.row - a.row);
 
-  if (result.ok) {
-    ui.alert('Done', `"${title}" is now live on the job board.`, ui.ButtonSet.OK);
+  let succeeded = 0, failed = 0;
+  for (const job of jobs) {
+    const result = _post(WEBHOOK_BASE + '/approve-job', {
+      company:         job.company,
+      job_title:       job.title,
+      application_url: job.url,
+      row_number:      job.row,
+    });
+    if (result.ok) succeeded++;
+    else failed++;
+  }
+
+  if (failed === 0) {
+    ui.alert('Done', `${succeeded} job(s) posted to WordPress.`, ui.ButtonSet.OK);
   } else {
-    ui.alert('Error', 'Something went wrong: ' + result.body, ui.ButtonSet.OK);
+    ui.alert('Partial success', `${succeeded} posted, ${failed} failed.`, ui.ButtonSet.OK);
   }
 }
 
 // ---------------------------------------------------------------------------
-// Remove a live job from WordPress.
-// How to use: go to the Jobs tab, click any cell in the row you want to remove,
-// then Job Board → Remove job.
+// Remove one or more live jobs from WordPress.
+// How to use: go to the Jobs tab, select one or more rows, then
+// Job Board → Remove job(s).
 // ---------------------------------------------------------------------------
 function removeJob() {
   const ui    = SpreadsheetApp.getUi();
   const sheet = SpreadsheetApp.getActiveSheet();
 
   if (sheet.getName() !== 'Jobs') {
-    ui.alert('Wrong tab', 'Go to the Jobs tab first, then click the row you want to remove.', ui.ButtonSet.OK);
+    ui.alert('Wrong tab', 'Go to the Jobs tab first, then select the row(s) you want to remove.', ui.ButtonSet.OK);
     return;
   }
 
-  const row = sheet.getActiveRange().getRow();
-  if (row <= 1) {
-    ui.alert('Select a job row (not the header).');
-    return;
-  }
+  const jobs = _selectedJobs(sheet);
+  if (!jobs) return;
 
-  const company = sheet.getRange(row, 1).getValue();
-  const title   = sheet.getRange(row, 2).getValue();
-  const url     = sheet.getRange(row, 3).getValue();
+  const label = jobs.length === 1
+    ? `"${jobs[0].title}" (${jobs[0].company})`
+    : `${jobs.length} jobs`;
 
-  if (!company || !title) {
-    ui.alert('Could not read job data from this row. Make sure a job row is selected.');
-    return;
-  }
-
-  const confirm = ui.alert(
-    'Remove job',
-    `Remove "${title}" (${company}) from WordPress? This cannot be undone.`,
-    ui.ButtonSet.YES_NO
-  );
+  const confirm = ui.alert('Remove job', `Remove ${label} from WordPress? This cannot be undone.`, ui.ButtonSet.YES_NO);
   if (confirm !== ui.Button.YES) return;
 
-  const result = _post(WEBHOOK_BASE + '/remove-job', {
-    company:         company,
-    job_title:       title,
-    application_url: url,
-    row_number:      row,
-  });
+  let succeeded = 0, failed = 0;
+  for (const job of jobs) {
+    const result = _post(WEBHOOK_BASE + '/remove-job', {
+      company:         job.company,
+      job_title:       job.title,
+      application_url: job.url,
+      row_number:      job.row,
+    });
+    if (result.ok) succeeded++;
+    else failed++;
+  }
 
-  if (result.ok) {
-    ui.alert('Done', `"${title}" has been removed from the job board.`, ui.ButtonSet.OK);
+  if (failed === 0) {
+    ui.alert('Done', `${succeeded} job(s) removed from WordPress.`, ui.ButtonSet.OK);
   } else {
-    ui.alert('Error', 'Something went wrong: ' + result.body, ui.ButtonSet.OK);
+    ui.alert('Partial success', `${succeeded} removed, ${failed} failed.`, ui.ButtonSet.OK);
   }
 }
 
@@ -145,15 +133,43 @@ function runScraper() {
 }
 
 // ---------------------------------------------------------------------------
+// Read job data from every selected row (skipping the header).
+// Returns an array of {company, title, url, row}, or null if nothing valid selected.
+// ---------------------------------------------------------------------------
+function _selectedJobs(sheet) {
+  const ui    = SpreadsheetApp.getUi();
+  const range = sheet.getActiveRange();
+  const startRow = range.getRow();
+  const numRows  = range.getNumRows();
+
+  const jobs = [];
+  for (let i = 0; i < numRows; i++) {
+    const row = startRow + i;
+    if (row <= 1) continue;
+    const values  = sheet.getRange(row, 1, 1, 3).getValues()[0];
+    const company = String(values[0] || '').trim();
+    const title   = String(values[1] || '').trim();
+    const url     = String(values[2] || '').trim();
+    if (company && title) jobs.push({ company, title, url, row });
+  }
+
+  if (jobs.length === 0) {
+    ui.alert('No valid job rows selected. Select at least one data row (not the header).');
+    return null;
+  }
+  return jobs;
+}
+
+// ---------------------------------------------------------------------------
 // Internal helper — POST JSON to a webhook endpoint.
 // ---------------------------------------------------------------------------
 function _post(url, payload) {
   try {
     const resp = UrlFetchApp.fetch(url, {
-      method:           'post',
-      contentType:      'application/json',
-      payload:          JSON.stringify(payload),
-      headers:          { 'X-Secret': WEBHOOK_SECRET },
+      method:             'post',
+      contentType:        'application/json',
+      payload:            JSON.stringify(payload),
+      headers:            { 'X-Secret': WEBHOOK_SECRET },
       muteHttpExceptions: true,
     });
     const code = resp.getResponseCode();
