@@ -93,16 +93,16 @@ def _summary_blocks(date, new_jobs, removed, errors, wp_failed, all_ok, added_jo
 
     blocks = [
         {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": "<!channel>"},
+        },
+        {
             "type": "header",
-            "text": {"type": "plain_text", "text": "Atlanta Ventures"},
+            "text": {"type": "plain_text", "text": f"Atlanta Ventures Job Board — {date}"},
         },
         {
             "type": "section",
-            "text": {"type": "mrkdwn", "text": f"*Job Board — {date}*"},
-        },
-        {
-            "type": "section",
-            "text": {"type": "mrkdwn", "text": f"{verdict_icon}  <!channel> {verdict_text}\n{activity}"},
+            "text": {"type": "mrkdwn", "text": f"{verdict_icon} {verdict_text}\n{activity}"},
         },
     ]
 
@@ -140,16 +140,16 @@ def _summary_blocks(date, new_jobs, removed, errors, wp_failed, all_ok, added_jo
 def _crash_blocks():
     return [
         {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": "<!channel>"},
+        },
+        {
             "type": "header",
-            "text": {"type": "plain_text", "text": "Atlanta Ventures"},
+            "text": {"type": "plain_text", "text": "Atlanta Ventures Job Board — Run Failed"},
         },
         {
             "type": "section",
-            "text": {"type": "mrkdwn", "text": "*Job Board — Run Failed*"},
-        },
-        {
-            "type": "section",
-            "text": {"type": "mrkdwn", "text": ":x:  The scraper crashed before completing. Check Railway logs for details."},
+            "text": {"type": "mrkdwn", "text": ":x: The scraper crashed before completing. Check Railway logs for details."},
         },
     ]
 
