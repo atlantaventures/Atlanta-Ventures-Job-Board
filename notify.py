@@ -149,6 +149,11 @@ def _summary_blocks(date, new_jobs, removed, errors, wp_failed, all_ok, added_jo
             "text": {"type": "mrkdwn", "text": f"*Listings Updated*\n{lines}"},
         })
 
+    blocks.append({
+        "type": "section",
+        "text": {"type": "mrkdwn", "text": "<https://www.atlantaventures.com/jobs/|View Job Board>"},
+    })
+
     return blocks
 
 
@@ -165,6 +170,10 @@ def _crash_blocks():
         {
             "type": "section",
             "text": {"type": "mrkdwn", "text": ":x: The scraper crashed before completing. Check Railway logs for details."},
+        },
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": "<https://www.atlantaventures.com/jobs/|View Job Board>"},
         },
     ]
 
