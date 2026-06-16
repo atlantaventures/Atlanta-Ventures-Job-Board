@@ -18,7 +18,7 @@ import gspread
 from dotenv import find_dotenv, load_dotenv
 
 from core.utils import detect_platform
-from core.dedup import load_existing_keys
+from core.dedup import load_existing_keys, expire_deleted_companies
 from fetchers.ashby import scrape_ashby
 from fetchers.breezy import scrape_breezy
 from fetchers.greenhouse import scrape_greenhouse
@@ -70,16 +70,23 @@ def main():
 
     print(f"Found {len(to_scrape)} companies with URLs\n")
 
+    # Expire jobs for companies that have been deleted from the Companies tab
+    active_companies = {row["Company"] for row in all_rows if row.get("Company")}
+    deleted_expired  = expire_deleted_companies(jobs_ws, active_companies, all_job_rows)
+    if deleted_expired:
+        names = ", ".join(dict.fromkeys(j["company"] for j in deleted_expired))
+        print(f"Expired {len(deleted_expired)} job(s) for removed companies: {names}\n")
+
     success_count  = 0
     fail_count     = 0
     error_count    = 0
     total_jobs     = 0
     duplicate_jobs = 0
     filtered_jobs  = 0
-    added_jobs       = []   # [{"company": str, "title": str}, ...]
-    removed_jobs     = []   # [{"company": str, "title": str}, ...]
-    updated_jobs     = []   # [{"company": str, "old_title": str, "new_title": str}, ...]
-    failed_companies = []   # company names that threw an exception
+    added_jobs       = []              # [{"company": str, "title": str}, ...]
+    removed_jobs     = deleted_expired  # pre-seeded with deleted-company jobs
+    updated_jobs     = []              # [{"company": str, "old_title": str, "new_title": str}, ...]
+    failed_companies = []              # company names that threw an exception
 
     with WebScraper() as scraper:
         for i, (sheet_row, row) in enumerate(to_scrape, start=1):
@@ -99,6 +106,7 @@ def main():
                         row, existing_keys, all_job_rows, today,
                     )
                     action = result["action"]
+                    removed_jobs.extend({"company": company, "title": t} for t in result.get("evicted_jobs", []))
                     if action in ("added", "updated", "re-added"):
                         total_jobs    += 1
                         success_count += 1

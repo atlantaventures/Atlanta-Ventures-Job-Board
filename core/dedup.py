@@ -86,6 +86,28 @@ def expire_removed_jobs(jobs_ws, company: str, current_keys: set, all_job_rows: 
     return expired_titles
 
 
+def expire_deleted_companies(jobs_ws, active_companies: set, all_job_rows: list) -> list:
+    """
+    Mark Jobs tab rows as expired for companies that no longer exist in the Companies tab.
+    Returns a list of {"company": str, "title": str} for every row expired.
+    """
+    active_lower = {c.lower() for c in active_companies}
+    expired = []
+    for i, row in enumerate(all_job_rows[1:], start=2):
+        if not row:
+            continue
+        company   = row[0].strip() if len(row) > 0 else ""
+        title     = row[1].strip() if len(row) > 1 else ""
+        wp_status = row[7].strip().lower() if len(row) > 7 else ""
+        if not company or wp_status in ("expired", "removed"):
+            continue
+        if company.lower() not in active_lower:
+            jobs_ws.update_cell(i, 8, "expired")
+            all_job_rows[i - 1][7] = "expired"
+            expired.append({"company": company, "title": title})
+    return expired
+
+
 def expire_stale_evergreen_rows(jobs_ws, company: str, current_key: str, all_job_rows: list) -> int:
     """
     Mark active Jobs tab rows for an evergreen company as expired when their

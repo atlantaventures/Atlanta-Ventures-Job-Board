@@ -215,6 +215,21 @@ def process_evergreen_company(
     if n_stale:
         print(f"    {n_stale} stale URL row(s) marked expired (Careers URL changed)")
 
+    # Expire any individual job rows left over from before this company was evergreen
+    old_jobs_expired = []
+    for i, jrow in enumerate(all_job_rows[1:], start=2):
+        if not jrow or jrow[0] != company:
+            continue
+        is_evergreen_row = str(jrow[4]).strip().lower() == "true" if len(jrow) > 4 else False
+        wp_status        = jrow[7].strip().lower() if len(jrow) > 7 else ""
+        if is_evergreen_row or wp_status in ("expired", "removed"):
+            continue
+        jobs_ws.update_cell(i, 8, "expired")
+        all_job_rows[i - 1][7] = "expired"
+        old_jobs_expired.append(jrow[1].strip() if len(jrow) > 1 else "")
+    if old_jobs_expired:
+        print(f"    {len(old_jobs_expired)} individual job row(s) expired (company switched to evergreen)")
+
     if key in existing_keys:
         # Find the active (non-expired/removed) row to compare against.
         # Expired rows are skipped — comparing against them causes false updates.
@@ -240,20 +255,20 @@ def process_evergreen_company(
                 jobs_ws.append_rows([new_row])
                 all_job_rows.append(new_row)
                 companies_ws.update_cell(sheet_row, 4, today)
-                return {"action": "updated", "old_title": current_title, "new_title": title}
+                return {"action": "updated", "old_title": current_title, "new_title": title, "evicted_jobs": old_jobs_expired}
             else:
-                return {"action": "no-change"}
+                return {"action": "no-change", "evicted_jobs": old_jobs_expired}
         else:
             # All prior rows expired/removed — re-add fresh
             new_row = [company, title, url, "Engineering", True, "In Person", today, "", description]
             jobs_ws.append_rows([new_row])
             all_job_rows.append(new_row)
             companies_ws.update_cell(sheet_row, 4, today)
-            return {"action": "re-added"}
+            return {"action": "re-added", "evicted_jobs": old_jobs_expired}
     else:
         new_row = [company, title, url, "Engineering", True, "In Person", today, "", description]
         jobs_ws.append_rows([new_row])
         all_job_rows.append(new_row)
         existing_keys.add(key)
         companies_ws.update_cell(sheet_row, 4, today)
-        return {"action": "added"}
+        return {"action": "added", "evicted_jobs": old_jobs_expired}
