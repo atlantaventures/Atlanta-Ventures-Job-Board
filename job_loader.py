@@ -71,7 +71,7 @@ def main():
     print(f"Found {len(to_scrape)} companies with URLs\n")
 
     # Expire jobs for companies that have been deleted from the Companies tab
-    active_companies = {row["Company"] for row in all_rows if row.get("Company")}
+    active_companies = {row["Company"] for row in all_rows if row.get("Company") and row.get("Careers URL", "").strip()}
     deleted_expired  = expire_deleted_companies(jobs_ws, active_companies, all_job_rows)
     if deleted_expired:
         names = ", ".join(dict.fromkeys(j["company"] for j in deleted_expired))
