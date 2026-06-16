@@ -17,15 +17,18 @@ def scrape_breezy(url: str) -> list:
 
     jobs = []
     for j in data:
-        title      = j.get("name", "")
-        dept       = j.get("department", "") or ""
-        fn         = normalize_function(dept) or normalize_function(title)
-        loc_name   = (j.get("location") or {}).get("name", "")
-        location   = normalize_location(loc_name)
-        friendly   = j.get("friendly_id", "") or j.get("id", "")
+        title    = j.get("name", "")
+        dept     = j.get("department", "") or ""
+        fn       = normalize_function(dept) or normalize_function(title)
+        loc_obj  = j.get("location") or {}
+        if loc_obj.get("is_remote"):
+            location = "Remote"
+        else:
+            city     = loc_obj.get("city", "") or loc_obj.get("name", "") or ""
+            location = normalize_location(city)
         jobs.append({
             "job_title":       title,
-            "application_url": f"https://{slug}.breezy.hr/p/{friendly}" if friendly else url,
+            "application_url": j.get("url", url),
             "job_function":    fn,
             "is_evergreen":    False,
             "job_location":    location,

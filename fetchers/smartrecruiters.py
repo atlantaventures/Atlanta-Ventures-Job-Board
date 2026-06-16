@@ -31,6 +31,8 @@ def scrape_smartrecruiters(url: str) -> list:
             loc   = j.get("location") or {}
             if loc.get("remote"):
                 location = "Remote"
+            elif loc.get("hybrid"):
+                location = "Hybrid"
             else:
                 location = "In Person"
             job_id = j.get("id", "")

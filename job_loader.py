@@ -23,7 +23,6 @@ from fetchers.ashby import scrape_ashby
 from fetchers.breezy import scrape_breezy
 from fetchers.greenhouse import scrape_greenhouse
 from fetchers.lever import scrape_lever
-from fetchers.recruitee import scrape_recruitee
 from fetchers.smartrecruiters import scrape_smartrecruiters
 from fetchers.workable import scrape_workable
 from fetchers.doc_loader import scrape_google_doc
@@ -117,8 +116,6 @@ def main():
                             fetched = scrape_greenhouse(url)
                         elif platform == "lever":
                             fetched = scrape_lever(url)
-                        elif platform == "recruitee":
-                            fetched = scrape_recruitee(url)
                         elif platform == "smartrecruiters":
                             fetched = scrape_smartrecruiters(url)
                         elif platform == "workable":

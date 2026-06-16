@@ -34,13 +34,15 @@ def scrape_workable(url: str) -> list:
         data = resp.json()
 
         for j in data.get("results", []):
-            title = j.get("title", "")
-            dept  = j.get("department", "") or ""
-            fn    = normalize_function(dept) or normalize_function(title)
-            wt    = ((j.get("location") or {}).get("workplace") or "").lower()
+            title     = j.get("title", "")
+            depts     = j.get("department") or []
+            dept_name = depts[0].get("name", "") if depts and isinstance(depts[0], dict) else ""
+            fn        = normalize_function(dept_name) or normalize_function(title)
+            wt        = (j.get("workplace") or "").lower()
+            shortcode = j.get("shortcode", "")
             jobs.append({
                 "job_title":       title,
-                "application_url": j.get("url", url),
+                "application_url": f"https://apply.workable.com/{slug}/j/{shortcode}" if shortcode else url,
                 "job_function":    fn,
                 "is_evergreen":    False,
                 "job_location":    _WORKPLACE_MAP.get(wt, "In Person"),
