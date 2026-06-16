@@ -19,9 +19,10 @@ def scrape_lever(url: str) -> list:
     jobs = []
     for p in data:
         title     = p.get("text", "")
-        team      = p.get("categories", {}).get("team", "")
+        categories = p.get("categories") or {}
+        team      = categories.get("team", "")
         fn        = normalize_function(team) or normalize_function(title)
-        workplace = p.get("workplaceType", "").lower()
+        workplace = (p.get("workplaceType") or "").lower()
         if workplace == "remote":
             loc = "Remote"
         elif workplace == "hybrid":
@@ -29,7 +30,7 @@ def scrape_lever(url: str) -> list:
         elif workplace == "on-site":
             loc = "In Person"
         else:
-            loc = normalize_location(p.get("categories", {}).get("location", ""))
+            loc = normalize_location(categories.get("location", ""))
         jobs.append({
             "job_title":       title,
             "application_url": p.get("hostedUrl", ""),

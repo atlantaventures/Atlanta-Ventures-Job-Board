@@ -11,7 +11,7 @@ import re
 
 import anthropic
 
-from core.normalize import normalize_function
+from core.normalize import normalize_function, normalize_location, VALID_FUNCTIONS, VALID_LOCATIONS
 from core.dedup import (
     is_generic_listing,
     job_key,
@@ -19,6 +19,28 @@ from core.dedup import (
     expire_stale_evergreen_rows,
     normalize_url,
 )
+
+
+def _sanitize(job: dict) -> dict:
+    """Coerce all job fields to safe types. Runs on every job before Claude sees it."""
+    title    = str(job.get("job_title")    or "").strip()
+    url      = str(job.get("application_url") or "").strip()
+    fn       = str(job.get("job_function") or "").strip()
+    loc      = str(job.get("job_location") or "").strip()
+    evergreen = bool(job.get("is_evergreen", False))
+
+    if fn not in VALID_FUNCTIONS:
+        fn = normalize_function(fn)
+    if loc not in VALID_LOCATIONS:
+        loc = normalize_location(loc)
+
+    return {
+        "job_title":       title,
+        "application_url": url,
+        "job_function":    fn,
+        "job_location":    loc,
+        "is_evergreen":    evergreen,
+    }
 
 
 def filter_jobs_with_claude(client: anthropic.Anthropic, company: str, jobs: list) -> tuple:
@@ -107,6 +129,8 @@ def process_company_jobs(
     for j in jobs:
         if not j.get("application_url"):
             j["application_url"] = url
+
+    jobs = [_sanitize(j) for j in jobs]
 
     # Mark jobs no longer on the careers page as expired (guard: only if scrape returned results)
     current_keys = {job_key(company, j) for j in jobs}

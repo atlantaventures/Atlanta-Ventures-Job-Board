@@ -25,7 +25,7 @@ def scrape_ashby(url: str) -> list:
         team     = j.get("team", "")
         dept     = j.get("department", "")
         fn       = normalize_function(team) or normalize_function(dept) or normalize_function(title)
-        wt       = j.get("workplaceType", "").lower()
+        wt       = (j.get("workplaceType") or "").lower()
         location = _WORKPLACE_MAP.get(wt, "In Person")
         jobs.append({
             "job_title":       title,
