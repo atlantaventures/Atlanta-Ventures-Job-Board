@@ -76,9 +76,10 @@ def main():
     total_jobs     = 0
     duplicate_jobs = 0
     filtered_jobs  = 0
-    added_jobs     = []   # [{"company": str, "title": str}, ...]
-    removed_jobs   = []   # [{"company": str, "title": str}, ...]
-    failed_companies = []  # company names that threw an exception
+    added_jobs       = []   # [{"company": str, "title": str}, ...]
+    removed_jobs     = []   # [{"company": str, "title": str}, ...]
+    updated_jobs     = []   # [{"company": str, "old_title": str, "new_title": str}, ...]
+    failed_companies = []   # company names that threw an exception
 
     with WebScraper() as scraper:
         for i, (sheet_row, row) in enumerate(to_scrape, start=1):
@@ -92,15 +93,22 @@ def main():
 
             try:
                 if evergreen_company:
-                    action = process_evergreen_company(
+                    result = process_evergreen_company(
                         jobs_ws, companies_ws,
                         company, urls[0], sheet_row,
                         row, existing_keys, all_job_rows, today,
                     )
+                    action = result["action"]
                     if action in ("added", "updated", "re-added"):
                         total_jobs    += 1
                         success_count += 1
                         print(f"    {action.capitalize()} evergreen listing\n")
+                        if action == "updated":
+                            updated_jobs.append({
+                                "company":   company,
+                                "old_title": result.get("old_title", ""),
+                                "new_title": result.get("new_title", ""),
+                            })
                     else:
                         print(f"    Already processed (no changes)\n")
                     if i < len(to_scrape):
@@ -212,6 +220,7 @@ def main():
         "scraper_ok":         error_count == 0,
         "added_jobs":         added_jobs,
         "removed_jobs":       removed_jobs,
+        "updated_jobs":       updated_jobs,
         "failed_companies":   failed_companies,
     }))
 

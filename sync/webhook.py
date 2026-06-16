@@ -42,6 +42,8 @@ ANTHROPIC_KEY   = os.environ["ANTHROPIC_API_KEY"]
 WEBHOOK_SECRET  = os.environ["WEBHOOK_SECRET"]
 
 CREDENTIALS_FILE = Path(__file__).parent.parent / "config" / "google_credentials.json"
+SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "")
+
 WP_AUTH    = (WP_USERNAME, WP_APP_PASSWORD)
 WP_HEADERS = {
     "Content-Type": "application/json",
@@ -52,6 +54,19 @@ WP_HEADERS = {
 COL_WP_STATUS = 7
 
 app = Flask(__name__)
+
+
+def _post_slack(text: str):
+    if not SLACK_WEBHOOK_URL:
+        return
+    try:
+        requests.post(
+            SLACK_WEBHOOK_URL,
+            json={"blocks": [{"type": "section", "text": {"type": "mrkdwn", "text": text}}]},
+            timeout=10,
+        )
+    except Exception:
+        pass
 
 _wz = logging.getLogger("werkzeug")
 _wz.handlers = [logging.StreamHandler(sys.stdout)]
@@ -178,6 +193,7 @@ def approve_job():
         # WP post succeeded — don't fail the whole request over a sheet write error
         print(f"Sheet update error after approve: {e}")
 
+    _post_slack(f":white_check_mark: *Job manually approved*\n• *{company}* — {title}")
     return jsonify({"status": "posted", "wp_id": post_id, "function": function, "location": location})
 
 
@@ -203,7 +219,10 @@ def remove_job():
     except Exception as e:
         print(f"Sheet update error after remove: {e}")
 
-    status = "removed" if deleted else "not_found_on_wp"
+    status    = "removed" if deleted else "not_found_on_wp"
+    job_title = data.get("job_title", "").strip()
+    company   = data.get("company", "").strip()
+    _post_slack(f":wastebasket: *Job manually removed*\n• *{company}* — {job_title}")
     return jsonify({"status": status})
 
 

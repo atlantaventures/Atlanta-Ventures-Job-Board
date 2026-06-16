@@ -202,7 +202,8 @@ def process_evergreen_company(
 ) -> str:
     """
     Handle evergreen company listing — one Jobs tab row per company pointing to their careers page.
-    Returns an action string for logging: 'added', 'updated', 're-added', or 'no-change'.
+    Returns a dict: {"action": str, ...}.
+    "updated" includes "old_title" and "new_title" keys.
     Mutates existing_keys and all_job_rows in place.
     """
     key          = normalize_url(url)
@@ -239,20 +240,20 @@ def process_evergreen_company(
                 jobs_ws.append_rows([new_row])
                 all_job_rows.append(new_row)
                 companies_ws.update_cell(sheet_row, 4, today)
-                return "updated"
+                return {"action": "updated", "old_title": current_title, "new_title": title}
             else:
-                return "no-change"
+                return {"action": "no-change"}
         else:
             # All prior rows expired/removed — re-add fresh
             new_row = [company, title, url, "Engineering", True, "In Person", today, "", description]
             jobs_ws.append_rows([new_row])
             all_job_rows.append(new_row)
             companies_ws.update_cell(sheet_row, 4, today)
-            return "re-added"
+            return {"action": "re-added"}
     else:
         new_row = [company, title, url, "Engineering", True, "In Person", today, "", description]
         jobs_ws.append_rows([new_row])
         all_job_rows.append(new_row)
         existing_keys.add(key)
         companies_ws.update_cell(sheet_row, 4, today)
-        return "added"
+        return {"action": "added"}

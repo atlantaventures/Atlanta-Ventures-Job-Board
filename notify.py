@@ -33,13 +33,14 @@ def main():
     date         = stats.get("date", "unknown")
     added_jobs        = stats.get("added_jobs", [])
     removed_jobs      = stats.get("removed_jobs", [])
+    updated_jobs      = stats.get("updated_jobs", [])
     failed_companies  = stats.get("failed_companies", [])
 
     # Plain-text version for Railway logs
     print(f"Job Board Run — {date}")
     print(f"  {'OK' if all_ok else 'WARNING'} | {companies} companies | {new_jobs} new | {removed} removed | {errors} errors")
 
-    _post_slack_blocks(_summary_blocks(date, new_jobs, removed, errors, wp_failed, all_ok, added_jobs, removed_jobs, failed_companies))
+    _post_slack_blocks(_summary_blocks(date, new_jobs, removed, errors, wp_failed, all_ok, added_jobs, removed_jobs, updated_jobs, failed_companies))
 
 
 _MAX_JOB_LINES = 30   # cap per section so the message doesn't become a wall of text
@@ -63,13 +64,15 @@ def _job_list_text(jobs: list, cap: int = _MAX_JOB_LINES) -> str:
     return "\n".join(lines)
 
 
-def _summary_blocks(date, new_jobs, removed, errors, wp_failed, all_ok, added_jobs=None, removed_jobs=None, failed_companies=None):
+def _summary_blocks(date, new_jobs, removed, errors, wp_failed, all_ok, added_jobs=None, removed_jobs=None, updated_jobs=None, failed_companies=None):
     added_jobs       = added_jobs       or []
     removed_jobs     = removed_jobs     or []
+    updated_jobs     = updated_jobs     or []
     failed_companies = failed_companies or []
 
     n_added   = len(added_jobs)
     n_removed = len(removed_jobs)
+    n_updated = len(updated_jobs)
     has_errors = errors > 0 or wp_failed > 0
 
     # ── Verdict line ──────────────────────────────────────────────────────────
@@ -80,8 +83,8 @@ def _summary_blocks(date, new_jobs, removed, errors, wp_failed, all_ok, added_jo
         verdict_icon = ":warning:"
         verdict_text = "*Errors Occurred on this Run*"
 
-    # Activity summary (how many added/removed)
-    if n_added == 0 and n_removed == 0:
+    # Activity summary (how many added/removed/updated)
+    if n_added == 0 and n_removed == 0 and n_updated == 0:
         activity = "No changes — the job board is up to date."
     else:
         parts = []
@@ -89,7 +92,9 @@ def _summary_blocks(date, new_jobs, removed, errors, wp_failed, all_ok, added_jo
             parts.append(f"*{n_added}* new job{'s' if n_added != 1 else ''} added")
         if n_removed:
             parts.append(f"*{n_removed}* job{'s' if n_removed != 1 else ''} removed")
-        activity = " and ".join(parts) + "."
+        if n_updated:
+            parts.append(f"*{n_updated}* listing{'s' if n_updated != 1 else ''} updated")
+        activity = ", ".join(parts) + "."
 
     blocks = [
         {
@@ -132,6 +137,16 @@ def _summary_blocks(date, new_jobs, removed, errors, wp_failed, all_ok, added_jo
         blocks.append({
             "type": "section",
             "text": {"type": "mrkdwn", "text": f"*Jobs Removed*\n{_job_list_text(removed_jobs)}"},
+        })
+
+    if updated_jobs:
+        lines = "\n".join(
+            f"• *{j['company']}* — _{j['old_title']}_ → _{j['new_title']}_"
+            for j in updated_jobs
+        )
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*Listings Updated*\n{lines}"},
         })
 
     return blocks
