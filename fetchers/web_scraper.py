@@ -14,7 +14,7 @@ def get_page_content(page, url: str) -> str:
     page.goto(url, timeout=PAGE_TIMEOUT, wait_until="domcontentloaded")
     page.wait_for_timeout(5000)
 
-    for _ in range(5):
+    for _ in range(10):
         clicked = False
         for selector in [
             "button:has-text('Load More')", "button:has-text('Show More')",
@@ -23,9 +23,9 @@ def get_page_content(page, url: str) -> str:
         ]:
             try:
                 btn = page.locator(selector).first
-                if btn.is_visible(timeout=1000):
+                if btn.is_visible(timeout=3000):
                     btn.click()
-                    page.wait_for_timeout(2000)
+                    page.wait_for_timeout(3000)
                     clicked = True
                     break
             except Exception:
