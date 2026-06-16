@@ -76,6 +76,9 @@ def main():
     total_jobs     = 0
     duplicate_jobs = 0
     filtered_jobs  = 0
+    added_jobs     = []   # [{"company": str, "title": str}, ...]
+    removed_jobs   = []   # [{"company": str, "title": str}, ...]
+    failed_companies = []  # company names that threw an exception
 
     with WebScraper() as scraper:
         for i, (sheet_row, row) in enumerate(to_scrape, start=1):
@@ -153,6 +156,8 @@ def main():
 
                 duplicate_jobs += stats["dupes"]
                 filtered_jobs  += stats["skipped"]
+                added_jobs.extend({"company": company, "title": t} for t in stats.get("added_jobs", []))
+                removed_jobs.extend({"company": company, "title": t} for t in stats.get("removed_jobs", []))
 
                 if stats["kept"] == 0 and stats["skipped"] == 0:
                     # All jobs were duplicates from a prior run
@@ -176,8 +181,9 @@ def main():
 
             except Exception as e:
                 print(f"    FAILED — {e}\n")
-                fail_count  += 1
-                error_count += 1
+                fail_count       += 1
+                error_count      += 1
+                failed_companies.append(company)
 
             if i < len(to_scrape):
                 time.sleep(DELAY_SECONDS)
@@ -204,6 +210,9 @@ def main():
         "duplicates_skipped": duplicate_jobs,
         "errors":             error_count,
         "scraper_ok":         error_count == 0,
+        "added_jobs":         added_jobs,
+        "removed_jobs":       removed_jobs,
+        "failed_companies":   failed_companies,
     }))
 
     if error_count:

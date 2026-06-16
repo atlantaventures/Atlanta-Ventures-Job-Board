@@ -134,17 +134,17 @@ def process_company_jobs(
     jobs = [_sanitize(j) for j in jobs]
 
     # Mark jobs no longer on the careers page as expired (guard: only if scrape returned results)
-    current_keys = {job_key(company, j) for j in jobs}
-    n_expired = expire_removed_jobs(jobs_ws, company, current_keys, all_job_rows)
-    if n_expired:
-        print(f"    {n_expired} job(s) marked expired")
+    current_keys  = {job_key(company, j) for j in jobs}
+    expired_titles = expire_removed_jobs(jobs_ws, company, current_keys, all_job_rows)
+    if expired_titles:
+        print(f"    {len(expired_titles)} job(s) marked expired")
 
     # Drop anything already processed in a prior run
     unseen = [j for j in jobs if job_key(company, j) not in existing_keys]
     dupes  = len(jobs) - len(unseen)
 
     if not unseen:
-        return {"kept": 0, "skipped": 0, "dupes": dupes}
+        return {"kept": 0, "skipped": 0, "dupes": dupes, "added_jobs": [], "removed_jobs": expired_titles}
 
     # Deterministic pre-filter: catch generic talent pool listings before Claude
     pre_skipped = [j for j in unseen if is_generic_listing(j.get("job_title", ""))]
@@ -190,7 +190,8 @@ def process_company_jobs(
 
     companies_ws.update_cell(sheet_row, 4, today)
 
-    return {"kept": len(kept), "skipped": len(all_skipped), "dupes": dupes}
+    added_titles = [j.get("job_title", "") for j in kept]
+    return {"kept": len(kept), "skipped": len(all_skipped), "dupes": dupes, "added_jobs": added_titles, "removed_jobs": expired_titles}
 
 
 def process_evergreen_company(

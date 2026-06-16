@@ -61,14 +61,14 @@ def load_existing_keys(*worksheets) -> set:
     return keys
 
 
-def expire_removed_jobs(jobs_ws, company: str, current_keys: set, all_job_rows: list) -> int:
+def expire_removed_jobs(jobs_ws, company: str, current_keys: set, all_job_rows: list) -> list:
     """
     Mark Jobs tab rows 'expired' for jobs no longer found on the careers page.
     Only called when the fresh scrape returned at least one result.
     Mutates all_job_rows in place to keep the in-memory copy current.
-    Returns the number of rows marked expired.
+    Returns a list of expired job titles.
     """
-    expired = 0
+    expired_titles = []
     for i, row in enumerate(all_job_rows[1:], start=2):
         if not row or row[0] != company:
             continue
@@ -82,8 +82,8 @@ def expire_removed_jobs(jobs_ws, company: str, current_keys: set, all_job_rows: 
         if key and key not in current_keys:
             jobs_ws.update_cell(i, 8, "expired")
             all_job_rows[i - 1][7] = "expired"
-            expired += 1
-    return expired
+            expired_titles.append(title)
+    return expired_titles
 
 
 def expire_stale_evergreen_rows(jobs_ws, company: str, current_key: str, all_job_rows: list) -> int:
