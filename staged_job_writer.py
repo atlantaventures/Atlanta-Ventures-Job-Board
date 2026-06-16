@@ -58,8 +58,9 @@ def filter_jobs_with_claude(client: anthropic.Anthropic, company: str, jobs: lis
 
 For each job, decide whether to KEEP or SKIP it, and assign a function category.
 
-SKIP if the role is a service, trade, manual labor, or part-time non-professional role (cook, driver, cleaner, barista, server, retail associate, warehouse worker, security guard, HVAC technician, repair technician, etc.)
+SKIP if the role is a hands-on trade, manual labor, or consumer-facing hourly job (cook, driver, cleaner, barista, server, retail associate, warehouse worker, security guard, HVAC technician, repair technician, etc.)
 KEEP if the role is a professional business position. When in doubt, KEEP.
+KEEP all support, customer success, and technical support roles — these are professional Operations positions, not consumer service work.
 KEEP technician roles that are R&D, lab, research, robotics, or engineering-adjacent — these are professional technical positions, not trade work.
 
 Function must be exactly one of these 5 values:
