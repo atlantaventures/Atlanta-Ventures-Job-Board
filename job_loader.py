@@ -20,8 +20,12 @@ from dotenv import find_dotenv, load_dotenv
 from core.utils import detect_platform
 from core.dedup import load_existing_keys
 from fetchers.ashby import scrape_ashby
+from fetchers.breezy import scrape_breezy
 from fetchers.greenhouse import scrape_greenhouse
 from fetchers.lever import scrape_lever
+from fetchers.recruitee import scrape_recruitee
+from fetchers.smartrecruiters import scrape_smartrecruiters
+from fetchers.workable import scrape_workable
 from fetchers.doc_loader import scrape_google_doc
 from fetchers.pdf_loader import scrape_pdf
 from fetchers.web_scraper import WebScraper, extract_jobs_with_claude
@@ -107,10 +111,18 @@ def main():
                     try:
                         if platform == "ashby":
                             fetched = scrape_ashby(url)
+                        elif platform == "breezy":
+                            fetched = scrape_breezy(url)
                         elif platform == "greenhouse":
                             fetched = scrape_greenhouse(url)
                         elif platform == "lever":
                             fetched = scrape_lever(url)
+                        elif platform == "recruitee":
+                            fetched = scrape_recruitee(url)
+                        elif platform == "smartrecruiters":
+                            fetched = scrape_smartrecruiters(url)
+                        elif platform == "workable":
+                            fetched = scrape_workable(url)
                         elif platform == "googledoc":
                             fetched = scrape_google_doc(claude, company, url)
                         elif platform == "pdf":

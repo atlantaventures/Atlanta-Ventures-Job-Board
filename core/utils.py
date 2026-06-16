@@ -9,6 +9,14 @@ def detect_platform(url: str) -> str:
         return "lever"
     if "ashbyhq.com" in url:
         return "ashby"
+    if "workable.com" in url:
+        return "workable"
+    if "smartrecruiters.com" in url:
+        return "smartrecruiters"
+    if "breezy.hr" in url:
+        return "breezy"
+    if "recruitee.com" in url:
+        return "recruitee"
     if "docs.google.com/document" in url:
         return "googledoc"
     if "linkedin.com/company" in url:
