@@ -7,6 +7,8 @@ def detect_platform(url: str) -> str:
         return "greenhouse"
     if "lever.co" in url:
         return "lever"
+    if "ashbyhq.com" in url:
+        return "ashby"
     if "docs.google.com/document" in url:
         return "googledoc"
     if "linkedin.com/company" in url:

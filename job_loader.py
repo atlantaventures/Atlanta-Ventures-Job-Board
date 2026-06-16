@@ -19,6 +19,7 @@ from dotenv import find_dotenv, load_dotenv
 
 from core.utils import detect_platform
 from core.dedup import load_existing_keys
+from fetchers.ashby import scrape_ashby
 from fetchers.greenhouse import scrape_greenhouse
 from fetchers.lever import scrape_lever
 from fetchers.doc_loader import scrape_google_doc
@@ -104,7 +105,9 @@ def main():
                 all_jobs = []
                 for url, platform in zip(urls, platforms):
                     try:
-                        if platform == "greenhouse":
+                        if platform == "ashby":
+                            fetched = scrape_ashby(url)
+                        elif platform == "greenhouse":
                             fetched = scrape_greenhouse(url)
                         elif platform == "lever":
                             fetched = scrape_lever(url)
