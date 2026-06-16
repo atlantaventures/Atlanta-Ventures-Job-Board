@@ -1,6 +1,13 @@
 import requests
 
-from core.normalize import normalize_function, normalize_location
+from core.normalize import normalize_function
+
+
+_WORKPLACE_MAP = {
+    "remote":  "Remote",
+    "hybrid":  "Hybrid",
+    "onsite":  "In Person",
+}
 
 
 def scrape_ashby(url: str) -> list:
@@ -13,17 +20,18 @@ def scrape_ashby(url: str) -> list:
     )
     resp.raise_for_status()
     jobs = []
-    for j in resp.json().get("jobPostings", []):
+    for j in resp.json().get("jobs", []):
         title    = j.get("title", "")
-        dept     = j.get("departmentName", "")
-        fn       = normalize_function(dept) or normalize_function(title)
-        location = j.get("locationName", "")
-        wt       = j.get("employmentType", "").lower()
+        team     = j.get("team", "")
+        dept     = j.get("department", "")
+        fn       = normalize_function(team) or normalize_function(dept) or normalize_function(title)
+        wt       = j.get("workplaceType", "").lower()
+        location = _WORKPLACE_MAP.get(wt, "In Person")
         jobs.append({
             "job_title":       title,
             "application_url": j.get("jobUrl", url),
             "job_function":    fn,
             "is_evergreen":    False,
-            "job_location":    normalize_location(location) if location else "In Person",
+            "job_location":    location,
         })
     return jobs
