@@ -7,4 +7,4 @@ RUN pip install -r requirements.txt && playwright install --with-deps chromium
 
 COPY . .
 
-CMD ["sh", "-c", "python3 setup_env.py && python3 sync/webhook.py"]
+CMD ["sh", "-c", "python3 setup_env.py && gunicorn --bind 0.0.0.0:${PORT:-5001} --workers 2 --timeout 120 sync.webhook:app"]
