@@ -103,10 +103,6 @@ def _summary_blocks(date, new_jobs, removed, errors, wp_failed, all_ok, added_jo
 
     blocks = [
         {
-            "type": "section",
-            "text": {"type": "mrkdwn", "text": "<!channel>"},
-        },
-        {
             "type": "header",
             "text": {"type": "plain_text", "text": f"Atlanta Ventures Job Board — {date}"},
         },
@@ -164,10 +160,6 @@ def _summary_blocks(date, new_jobs, removed, errors, wp_failed, all_ok, added_jo
 
 def _crash_blocks():
     return [
-        {
-            "type": "section",
-            "text": {"type": "mrkdwn", "text": "<!channel>"},
-        },
         {
             "type": "header",
             "text": {"type": "plain_text", "text": "Atlanta Ventures Job Board — Run Failed"},

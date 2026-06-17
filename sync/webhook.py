@@ -13,6 +13,7 @@ Start:
 All requests must include the header:  X-Secret: <WEBHOOK_SECRET from .env>
 """
 
+import hmac
 import logging
 import os
 import subprocess
@@ -73,7 +74,8 @@ _wz.handlers = [logging.StreamHandler(sys.stdout)]
 
 
 def _check_secret():
-    if request.headers.get("X-Secret") != WEBHOOK_SECRET:
+    provided = request.headers.get("X-Secret", "")
+    if not hmac.compare_digest(provided, WEBHOOK_SECRET):
         return jsonify({"error": "Unauthorized"}), 401
     return None
 
@@ -133,29 +135,44 @@ def _post_to_wp(company: str, title: str, url: str, function: str, location: str
     return None
 
 
+def _find_wp_job_id(app_url: str) -> int | None:
+    """Paginate through all WP jobs and return the post ID matching app_url, or None."""
+    norm = app_url.rstrip("/").lower()
+    page = 1
+    while True:
+        resp = requests.get(
+            f"{WP_URL}/wp-json/wp/v2/av_job",
+            params={"per_page": 100, "page": page, "_fields": "id,acf"},
+            auth=WP_AUTH,
+            headers=WP_HEADERS,
+            timeout=30,
+        )
+        if not resp.ok:
+            return None
+        batch = resp.json()
+        if not batch:
+            return None
+        for job in batch:
+            if job.get("acf", {}).get("job_link", "").rstrip("/").lower() == norm:
+                return job["id"]
+        if len(batch) < 100:
+            return None
+        page += 1
+
+
 def _delete_from_wp(app_url: str) -> bool:
     """Find a WP job by its URL and permanently delete it."""
-    search = requests.get(
-        f"{WP_URL}/wp-json/wp/v2/av_job",
-        params={"per_page": 100, "_fields": "id,acf"},
+    post_id = _find_wp_job_id(app_url)
+    if post_id is None:
+        return False
+    resp = requests.delete(
+        f"{WP_URL}/wp-json/wp/v2/av_job/{post_id}",
+        params={"force": True},
         auth=WP_AUTH,
         headers=WP_HEADERS,
         timeout=30,
     )
-    if not search.ok:
-        return False
-    norm = app_url.rstrip("/").lower()
-    for job in search.json():
-        if job.get("acf", {}).get("job_link", "").rstrip("/").lower() == norm:
-            resp = requests.delete(
-                f"{WP_URL}/wp-json/wp/v2/av_job/{job['id']}",
-                params={"force": True},
-                auth=WP_AUTH,
-                headers=WP_HEADERS,
-                timeout=30,
-            )
-            return resp.status_code == 200
-    return False
+    return resp.status_code == 200
 
 
 @app.route("/approve-job", methods=["POST"])
@@ -172,6 +189,9 @@ def approve_job():
 
     if not company or not title:
         return jsonify({"error": "Missing company or job_title"}), 400
+
+    if app_url and _find_wp_job_id(app_url) is not None:
+        return jsonify({"status": "already_posted", "message": "Job already exists on WordPress"}), 409
 
     classified = _classify_job(title, company)
     function   = classified.get("job_function", "")
@@ -226,16 +246,26 @@ def remove_job():
     return jsonify({"status": status})
 
 
+_LOCK_FILE = Path("/tmp/scraper.lock")
+
+
 @app.route("/run", methods=["POST"])
 def run_scraper():
     err = _check_secret()
     if err:
         return err
 
+    if _LOCK_FILE.exists():
+        return jsonify({"status": "already_running", "message": "A scraper run is already in progress"}), 409
+
     repo_root = Path(__file__).parent.parent
 
     def _run():
-        subprocess.run(["bash", "run.sh"], cwd=str(repo_root))
+        _LOCK_FILE.touch()
+        try:
+            subprocess.run(["bash", "run.sh"], cwd=str(repo_root))
+        finally:
+            _LOCK_FILE.unlink(missing_ok=True)
 
     threading.Thread(target=_run, daemon=True).start()
     return jsonify({"status": "started"})

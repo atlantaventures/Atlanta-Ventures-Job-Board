@@ -12,6 +12,8 @@ def scrape_greenhouse(url: str) -> list:
         f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs",
         timeout=10,
     )
+    if resp.status_code == 404:
+        return []
     resp.raise_for_status()
     jobs = []
     for j in resp.json().get("jobs", []):

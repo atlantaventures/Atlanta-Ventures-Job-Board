@@ -83,7 +83,7 @@ Return ONLY the JSON array, no explanation, no markdown."""
 
     response = client.messages.create(
         model="claude-haiku-4-5-20251001",
-        max_tokens=1500,
+        max_tokens=4000,
         temperature=0,
         messages=[{"role": "user", "content": prompt}],
     )

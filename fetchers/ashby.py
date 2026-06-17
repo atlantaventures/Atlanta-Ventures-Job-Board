@@ -18,6 +18,8 @@ def scrape_ashby(url: str) -> list:
         f"https://api.ashbyhq.com/posting-api/job-board/{slug}",
         timeout=10,
     )
+    if resp.status_code == 404:
+        return []
     resp.raise_for_status()
     jobs = []
     for j in resp.json().get("jobs", []):

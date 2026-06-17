@@ -18,6 +18,8 @@ def scrape_smartrecruiters(url: str) -> list:
             params={"limit": limit, "offset": offset},
             timeout=15,
         )
+        if resp.status_code == 404:
+            return []
         resp.raise_for_status()
         data    = resp.json()
         content = data.get("content", [])

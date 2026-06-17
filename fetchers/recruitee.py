@@ -16,6 +16,8 @@ def scrape_recruitee(url: str) -> list:
         f"https://api.recruitee.com/c/{slug}/offers",
         timeout=15,
     )
+    if resp.status_code == 404:
+        return []
     resp.raise_for_status()
 
     jobs = []

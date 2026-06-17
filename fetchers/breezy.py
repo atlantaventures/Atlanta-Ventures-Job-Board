@@ -10,6 +10,8 @@ def scrape_breezy(url: str) -> list:
         return []
 
     resp = requests.get(f"https://{slug}.breezy.hr/json", timeout=15)
+    if resp.status_code == 404:
+        return []
     resp.raise_for_status()
     data = resp.json()
     if not isinstance(data, list):

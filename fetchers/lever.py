@@ -12,6 +12,8 @@ def scrape_lever(url: str) -> list:
         f"https://api.lever.co/v0/postings/{slug}?mode=json",
         timeout=10,
     )
+    if resp.status_code == 404:
+        return []
     resp.raise_for_status()
     data = resp.json()
     if not isinstance(data, list):

@@ -10,6 +10,9 @@ def normalize_function(raw: str) -> str:
     for f in VALID_FUNCTIONS:
         if f.lower() == r:
             return f
+    # HR abbreviation — "human res" keyword misses "HR Manager", "VP of HR", etc.
+    if r == "hr" or r.startswith("hr ") or r.endswith(" hr"):
+        return "Operations"
     # Finance first — must precede Engineering to catch "Financial Analyst", "Accounting", etc.
     if any(k in r for k in ["financ", "accounting", "invest", "treasury", "fp&a", "controller", "audit", "tax", "payroll"]):
         return "Finance"

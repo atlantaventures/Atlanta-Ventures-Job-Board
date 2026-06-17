@@ -30,6 +30,8 @@ def scrape_workable(url: str) -> list:
             json=body,
             timeout=15,
         )
+        if resp.status_code == 404:
+            return []
         resp.raise_for_status()
         data = resp.json()
 
