@@ -1,5 +1,7 @@
 import re
 
+from core.utils import sheets_write
+
 _GENERIC_PATTERNS = [
     "talent network", "talent pool", "talent community",
     "general application", "open application", "general interest",
@@ -80,7 +82,7 @@ def expire_removed_jobs(jobs_ws, company: str, current_keys: set, all_job_rows: 
         is_gdoc = "docs.google.com" in app_url
         key = (normalize_url(app_url) if (app_url and not is_gdoc) else f"{company}|{title}".lower())
         if key and key not in current_keys:
-            jobs_ws.update_cell(i, 8, "expired")
+            sheets_write(jobs_ws.update_cell, i, 8, "expired")
             all_job_rows[i - 1][7] = "expired"
             expired_titles.append(title)
     return expired_titles
@@ -102,7 +104,7 @@ def expire_deleted_companies(jobs_ws, active_companies: set, all_job_rows: list)
         if not company or wp_status in ("expired", "removed"):
             continue
         if company.lower() not in active_lower:
-            jobs_ws.update_cell(i, 8, "expired")
+            sheets_write(jobs_ws.update_cell, i, 8, "expired")
             all_job_rows[i - 1][7] = "expired"
             expired.append({"company": company, "title": title})
     return expired
@@ -126,7 +128,7 @@ def expire_stale_evergreen_rows(jobs_ws, company: str, current_key: str, all_job
             continue
         row_key = normalize_url(row[2]) if len(row) > 2 else ""
         if row_key and row_key != current_key:
-            jobs_ws.update_cell(i, 8, "expired")
+            sheets_write(jobs_ws.update_cell, i, 8, "expired")
             all_job_rows[i - 1][7] = "expired"
             expired += 1
     return expired

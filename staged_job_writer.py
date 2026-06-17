@@ -12,6 +12,7 @@ import re
 import anthropic
 
 from core.normalize import normalize_function, normalize_location, VALID_FUNCTIONS, VALID_LOCATIONS
+from core.utils import sheets_write
 from core.dedup import (
     is_generic_listing,
     job_key,
@@ -169,13 +170,13 @@ def process_company_jobs(
             ]
             for j in kept
         ]
-        jobs_ws.append_rows(new_rows)
+        sheets_write(jobs_ws.append_rows, new_rows)
         all_job_rows.extend(new_rows)
         for j in kept:
             existing_keys.add(job_key(company, j))
 
     if all_skipped:
-        skipped_ws.append_rows([
+        sheets_write(skipped_ws.append_rows, [
             [
                 company,
                 j.get("job_title", ""),
@@ -188,7 +189,7 @@ def process_company_jobs(
         for j in all_skipped:
             existing_keys.add(job_key(company, j))
 
-    companies_ws.update_cell(sheet_row, 4, today)
+    sheets_write(companies_ws.update_cell, sheet_row, 4, today)
 
     added_titles = [j.get("job_title", "") for j in kept]
     return {"kept": len(kept), "skipped": len(all_skipped), "dupes": dupes, "added_jobs": added_titles, "removed_jobs": expired_titles}
@@ -224,7 +225,7 @@ def process_evergreen_company(
         wp_status        = jrow[7].strip().lower() if len(jrow) > 7 else ""
         if is_evergreen_row or wp_status in ("expired", "removed"):
             continue
-        jobs_ws.update_cell(i, 8, "expired")
+        sheets_write(jobs_ws.update_cell, i, 8, "expired")
         all_job_rows[i - 1][7] = "expired"
         old_jobs_expired.append(jrow[1].strip() if len(jrow) > 1 else "")
     if old_jobs_expired:
@@ -249,26 +250,26 @@ def process_evergreen_company(
             current_desc  = jrow[8] if len(jrow) > 8 else ""
             if current_title != title or current_desc != description:
                 # Title or description changed — expire old row and write a fresh one
-                jobs_ws.update_cell(j, 8, "expired")
+                sheets_write(jobs_ws.update_cell, j, 8, "expired")
                 all_job_rows[j - 1][7] = "expired"
                 new_row = [company, title, url, "Engineering", True, "In Person", today, "", description]
-                jobs_ws.append_rows([new_row])
+                sheets_write(jobs_ws.append_rows, [new_row])
                 all_job_rows.append(new_row)
-                companies_ws.update_cell(sheet_row, 4, today)
+                sheets_write(companies_ws.update_cell, sheet_row, 4, today)
                 return {"action": "updated", "old_title": current_title, "new_title": title, "evicted_jobs": old_jobs_expired}
             else:
                 return {"action": "no-change", "evicted_jobs": old_jobs_expired}
         else:
             # All prior rows expired/removed — re-add fresh
             new_row = [company, title, url, "Engineering", True, "In Person", today, "", description]
-            jobs_ws.append_rows([new_row])
+            sheets_write(jobs_ws.append_rows, [new_row])
             all_job_rows.append(new_row)
-            companies_ws.update_cell(sheet_row, 4, today)
+            sheets_write(companies_ws.update_cell, sheet_row, 4, today)
             return {"action": "re-added", "evicted_jobs": old_jobs_expired}
     else:
         new_row = [company, title, url, "Engineering", True, "In Person", today, "", description]
-        jobs_ws.append_rows([new_row])
+        sheets_write(jobs_ws.append_rows, [new_row])
         all_job_rows.append(new_row)
         existing_keys.add(key)
-        companies_ws.update_cell(sheet_row, 4, today)
+        sheets_write(companies_ws.update_cell, sheet_row, 4, today)
         return {"action": "added", "evicted_jobs": old_jobs_expired}

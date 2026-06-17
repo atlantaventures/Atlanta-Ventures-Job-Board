@@ -158,6 +158,9 @@ def main():
                         all_jobs.extend(fetched)
                     except Exception as e:
                         print(f"    FAILED fetching {url} — {e}")
+                        if company not in failed_companies:
+                            failed_companies.append(company)
+                        error_count += 1
 
                 if not all_jobs:
                     print(f"    No jobs found\n")

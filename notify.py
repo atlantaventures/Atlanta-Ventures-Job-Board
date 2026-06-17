@@ -18,7 +18,12 @@ def main():
         _post_slack_blocks(_crash_blocks())
         return
 
-    stats = json.loads(STATS_FILE.read_text())
+    try:
+        stats = json.loads(STATS_FILE.read_text())
+    except Exception:
+        print("Job Board Run — ERROR: stats file corrupted or unreadable")
+        _post_slack_blocks(_crash_blocks())
+        return
     STATS_FILE.unlink(missing_ok=True)
 
     scraper_ok = stats.get("scraper_ok", False)
