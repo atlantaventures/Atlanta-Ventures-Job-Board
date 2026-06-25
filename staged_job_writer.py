@@ -223,7 +223,7 @@ def process_evergreen_company(
             continue
         is_evergreen_row = str(jrow[4]).strip().lower() == "true" if len(jrow) > 4 else False
         wp_status        = jrow[7].strip().lower() if len(jrow) > 7 else ""
-        if is_evergreen_row or wp_status in ("expired", "removed"):
+        if is_evergreen_row or wp_status in ("expired", "removed", "blocked"):
             continue
         sheets_write(jobs_ws.update_cell, i, 8, "expired")
         all_job_rows[i - 1][7] = "expired"
@@ -239,7 +239,7 @@ def process_evergreen_company(
             row_key   = normalize_url(jrow[2]) if len(jrow) > 2 else ""
             wp_status = jrow[7] if len(jrow) > 7 else ""
             if jrow[0] == company and row_key == key:
-                if wp_status.lower() in ("expired", "removed"):
+                if wp_status.lower() in ("expired", "removed", "blocked"):
                     continue
                 active_row = (j, jrow)
                 break

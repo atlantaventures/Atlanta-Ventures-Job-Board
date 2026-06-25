@@ -195,7 +195,7 @@ def main():
     for i, row in enumerate(data, start=2):
         company   = row[COL_COMPANY].strip()  if len(row) > COL_COMPANY   else ""
         wp_status = row[COL_WP_STATUS].strip() if len(row) > COL_WP_STATUS else ""
-        if company and company not in active_companies and wp_status.lower() not in ("expired", "removed"):
+        if company and company not in active_companies and wp_status.lower() not in ("expired", "removed", "blocked"):
             _sheets_write(jobs_ws.update_cell,i, COL_WP_STATUS + 1, "expired")
             row[COL_WP_STATUS] = "expired"
 
@@ -237,7 +237,7 @@ def main():
                 _sheets_write(jobs_ws.update_cell,i, COL_WP_STATUS + 1, "removed")
             continue
 
-        if wp_status.lower() in ("posted", "removed"):
+        if wp_status.lower() in ("posted", "removed", "blocked"):
             skipped += 1
             continue
 
