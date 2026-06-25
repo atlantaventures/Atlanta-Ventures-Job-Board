@@ -258,10 +258,15 @@ def run_scraper():
     if _LOCK_FILE.exists():
         return jsonify({"status": "already_running", "message": "A scraper run is already in progress"}), 409
 
+    _LOCK_FILE.touch()
+
     repo_root = Path(__file__).parent.parent
 
     def _run():
-        subprocess.run(["bash", "run.sh"], cwd=str(repo_root))
+        try:
+            subprocess.run(["bash", "run.sh"], cwd=str(repo_root))
+        finally:
+            _LOCK_FILE.unlink(missing_ok=True)
 
     threading.Thread(target=_run, daemon=True).start()
     return jsonify({"status": "started"})
