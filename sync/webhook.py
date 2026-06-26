@@ -235,7 +235,7 @@ def remove_job():
     try:
         jobs_ws, _ = _sheets()
         if job_row:
-            jobs_ws.update_cell(job_row, COL_WP_STATUS + 1, "blocked")
+            jobs_ws.update_cell(job_row, COL_WP_STATUS + 1, "removed")
     except Exception as e:
         print(f"Sheet update error after remove: {e}")
 
@@ -258,11 +258,10 @@ def run_scraper():
     if _LOCK_FILE.exists():
         return jsonify({"status": "already_running", "message": "A scraper run is already in progress"}), 409
 
-    _LOCK_FILE.touch()
-
     repo_root = Path(__file__).parent.parent
 
     def _run():
+        _LOCK_FILE.touch()
         try:
             subprocess.run(["bash", "run.sh"], cwd=str(repo_root))
         finally:
@@ -270,78 +269,6 @@ def run_scraper():
 
     threading.Thread(target=_run, daemon=True).start()
     return jsonify({"status": "started"})
-
-
-@app.route("/nuke", methods=["POST"])
-def nuke_jobs():
-    err = _check_secret()
-    if err:
-        return err
-
-    if _LOCK_FILE.exists():
-        return jsonify({"error": "A scraper run is in progress — wait for it to finish first"}), 409
-
-    _JOBS_HEADERS    = ["Company", "Job Title", "Application URL", "Function",
-                        "Evergreen", "Location", "Scraped At", "WP Status", "Description"]
-    _SKIPPED_HEADERS = ["Company", "Job Title", "Application URL", "Reason", "Scraped At"]
-
-    def _run_nuke():
-        # Step 1: delete all WP jobs
-        page    = 1
-        deleted = 0
-        print("Nuke started — deleting all WordPress jobs...", flush=True)
-        while True:
-            resp = requests.get(
-                f"{WP_URL}/wp-json/wp/v2/av_job",
-                params={"per_page": 100, "page": page, "_fields": "id"},
-                auth=WP_AUTH,
-                headers=WP_HEADERS,
-                timeout=30,
-            )
-            if resp.status_code == 400:
-                break
-            if not resp.ok:
-                print(f"  Nuke: WP fetch failed {resp.status_code}", flush=True)
-                break
-            batch = resp.json()
-            if not batch:
-                break
-            for job in batch:
-                del_resp = requests.delete(
-                    f"{WP_URL}/wp-json/wp/v2/av_job/{job['id']}",
-                    params={"force": True},
-                    auth=WP_AUTH,
-                    headers=WP_HEADERS,
-                    timeout=30,
-                )
-                if del_resp.status_code == 200:
-                    deleted += 1
-                else:
-                    print(f"  Nuke: failed to delete post {job['id']}: {del_resp.status_code}", flush=True)
-            if len(batch) < 100:
-                break
-            page += 1
-        print(f"  WP: {deleted} job(s) deleted", flush=True)
-
-        # Step 2: reset Jobs and Skipped tabs (clear all rows, restore headers)
-        try:
-            gc       = gspread.service_account(filename=str(CREDENTIALS_FILE))
-            sh       = gc.open_by_key(SHEET_ID)
-            jobs_ws  = sh.worksheet("Jobs")
-            skip_ws  = sh.worksheet("Skipped")
-            jobs_ws.clear()
-            jobs_ws.update([_JOBS_HEADERS], "A1")
-            skip_ws.clear()
-            skip_ws.update([_SKIPPED_HEADERS], "A1")
-            print("  Sheets: Jobs and Skipped tabs reset", flush=True)
-        except Exception as e:
-            print(f"  Sheets reset failed: {e}", flush=True)
-
-        print("Nuke complete.", flush=True)
-        _post_slack(f":boom: *Nuke complete* — {deleted} WP job(s) deleted, Jobs + Skipped tabs cleared")
-
-    threading.Thread(target=_run_nuke, daemon=True).start()
-    return jsonify({"status": "started", "message": "Nuking all WordPress jobs in the background"})
 
 
 @app.route("/health", methods=["GET"])
