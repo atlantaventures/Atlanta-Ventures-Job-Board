@@ -162,7 +162,7 @@ function nukeAllJobs() {
   const result = _post(WEBHOOK_BASE + '/nuke', {});
 
   if (result.ok) {
-    ui.alert('Nuke started', 'All jobs are being deleted from WordPress and the sheet is being cleared. This runs in the background — check Railway logs for progress.', ui.ButtonSet.OK);
+    ui.alert('Nuke started', 'All jobs are being deleted from WordPress and the sheet is being cleared.', ui.ButtonSet.OK);
   } else {
     ui.alert('Error', 'Nuke failed: ' + result.body, ui.ButtonSet.OK);
   }
