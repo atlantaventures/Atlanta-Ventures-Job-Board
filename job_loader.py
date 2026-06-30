@@ -18,7 +18,7 @@ import gspread
 from dotenv import find_dotenv, load_dotenv
 
 from core.utils import detect_platform
-from core.dedup import load_existing_keys, expire_deleted_companies
+from core.dedup import load_existing_keys, expire_deleted_companies, expire_removed_jobs
 from fetchers.ashby import scrape_ashby
 from fetchers.breezy import scrape_breezy
 from fetchers.greenhouse import scrape_greenhouse
@@ -126,6 +126,7 @@ def main():
 
                 # Fetch jobs from all URLs; apply source URL as fallback for jobs without a link
                 all_jobs = []
+                linkedin_gone = False
                 for url, platform in zip(urls, platforms):
                     try:
                         if platform == "ashby":
@@ -160,6 +161,10 @@ def main():
                         all_jobs.extend(fetched)
                     except Exception as e:
                         print(f"    FAILED fetching {url} — {e}")
+                        if platform == "linkedin":
+                            msg = str(e).lower()
+                            if any(k in msg for k in ("404", "not found", "unexpected page title")):
+                                linkedin_gone = True
                         if company not in failed_companies:
                             failed_companies.append(company)
                         error_count += 1
@@ -167,6 +172,11 @@ def main():
                 if not all_jobs:
                     print(f"    No jobs found\n")
                     fail_count += 1
+                    if linkedin_gone:
+                        expired = expire_removed_jobs(jobs_ws, company, set(), all_job_rows)
+                        if expired:
+                            removed_jobs.extend({"company": company, "title": t} for t in expired)
+                            print(f"    Expired {len(expired)} row(s) — LinkedIn job(s) no longer available")
                     continue
 
                 stats = process_company_jobs(
