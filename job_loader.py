@@ -27,6 +27,7 @@ from fetchers.smartrecruiters import scrape_smartrecruiters
 from fetchers.workable import scrape_workable
 from fetchers.doc_loader import scrape_google_doc
 from fetchers.pdf_loader import scrape_pdf
+from fetchers.linkedin import fetch_linkedin_job
 from fetchers.web_scraper import WebScraper, extract_jobs_with_claude
 from staged_job_writer import process_company_jobs, process_evergreen_company
 
@@ -144,8 +145,9 @@ def main():
                         elif platform == "pdf":
                             fetched = scrape_pdf(claude, company, url)
                         elif platform == "linkedin":
-                            print(f"    LinkedIn not supported — add a direct career page URL for {company}")
-                            continue
+                            job = fetch_linkedin_job(url)
+                            job.pop("_company", None)
+                            fetched = [job]
                         else:
                             content = scraper.get_content(url)
                             if not content.strip():

@@ -33,7 +33,7 @@ def detect_platform(url: str) -> str:
         return "breezy"
     if "docs.google.com/document" in url:
         return "googledoc"
-    if "linkedin.com/company" in url:
+    if "linkedin.com" in url:
         return "linkedin"
     if re.search(r"drive\.google\.com/(file/d/|uc\?)", url):
         return "pdf"
