@@ -265,11 +265,11 @@ def process_evergreen_company(
             sheets_write(jobs_ws.append_rows, [new_row])
             all_job_rows.append(new_row)
             sheets_write(companies_ws.update_cell, sheet_row, 4, today)
-            return {"action": "re-added", "evicted_jobs": old_jobs_expired}
+            return {"action": "re-added", "title": title, "evicted_jobs": old_jobs_expired}
     else:
         new_row = [company, title, url, "Engineering", True, "In Person", today, "", description]
         sheets_write(jobs_ws.append_rows, [new_row])
         all_job_rows.append(new_row)
         existing_keys.add(key)
         sheets_write(companies_ws.update_cell, sheet_row, 4, today)
-        return {"action": "added", "evicted_jobs": old_jobs_expired}
+        return {"action": "added", "title": title, "evicted_jobs": old_jobs_expired}

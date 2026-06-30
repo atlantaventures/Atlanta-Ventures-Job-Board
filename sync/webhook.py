@@ -199,6 +199,11 @@ def approve_job():
 
     post_id = _post_to_wp(company, title, app_url, function, location)
     if not post_id:
+        _post_slack(
+            f":x: *Failed to post job to website*\n"
+            f"• *{company}* — {title}\n"
+            f"_The website may be temporarily unavailable. Try approving it again in a few minutes._"
+        )
         return jsonify({"error": "WordPress post failed"}), 500
 
     # Write a "posted" row to the Jobs tab and mark the Skipped row
@@ -242,7 +247,14 @@ def remove_job():
     status    = "removed" if deleted else "not_found_on_wp"
     job_title = data.get("job_title", "").strip()
     company   = data.get("company", "").strip()
-    _post_slack(f":wastebasket: *Job manually removed*\n• *{company}* — {job_title}")
+    if deleted:
+        _post_slack(f":wastebasket: *Job manually removed*\n• *{company}* — {job_title}")
+    else:
+        _post_slack(
+            f":wastebasket: *Job removed from sheet* (was not on the website)\n"
+            f"• *{company}* — {job_title}\n"
+            f"_The job has been blocked in the sheet and won't come back. It may not have been published to the website yet._"
+        )
     return jsonify({"status": status})
 
 
@@ -256,6 +268,7 @@ def run_scraper():
         return err
 
     if _LOCK_FILE.exists():
+        _post_slack(":hourglass_flowing_sand: *Scraper already running* — a scrape is already in progress. Check back in a few minutes.")
         return jsonify({"status": "already_running", "message": "A scraper run is already in progress"}), 409
 
     _LOCK_FILE.touch()
@@ -287,8 +300,10 @@ def nuke_jobs():
 
     def _run_nuke():
         # Step 1: delete all WP jobs
-        page    = 1
-        deleted = 0
+        page         = 1
+        deleted      = 0
+        delete_fails = 0
+        wp_fetch_ok  = True
         print("Nuke started — deleting all WordPress jobs...", flush=True)
         while True:
             resp = requests.get(
@@ -302,6 +317,7 @@ def nuke_jobs():
                 break
             if not resp.ok:
                 print(f"  Nuke: WP fetch failed {resp.status_code}", flush=True)
+                wp_fetch_ok = False
                 break
             batch = resp.json()
             if not batch:
@@ -317,6 +333,7 @@ def nuke_jobs():
                 if del_resp.status_code == 200:
                     deleted += 1
                 else:
+                    delete_fails += 1
                     print(f"  Nuke: failed to delete post {job['id']}: {del_resp.status_code}", flush=True)
             if len(batch) < 100:
                 break
@@ -324,6 +341,7 @@ def nuke_jobs():
         print(f"  WP: {deleted} job(s) deleted", flush=True)
 
         # Step 2: reset Jobs and Skipped tabs (clear all rows, restore headers)
+        sheets_ok = True
         try:
             gc       = gspread.service_account(filename=str(CREDENTIALS_FILE))
             sh       = gc.open_by_key(SHEET_ID)
@@ -335,10 +353,25 @@ def nuke_jobs():
             skip_ws.update([_SKIPPED_HEADERS], "A1")
             print("  Sheets: Jobs and Skipped tabs reset", flush=True)
         except Exception as e:
+            sheets_ok = False
             print(f"  Sheets reset failed: {e}", flush=True)
 
         print("Nuke complete.", flush=True)
-        _post_slack(f":boom: *Nuke complete* — {deleted} WP job(s) deleted, Jobs + Skipped tabs cleared")
+
+        if not wp_fetch_ok or delete_fails or not sheets_ok:
+            problems = []
+            if not wp_fetch_ok:
+                problems.append("couldn't reach the website to delete jobs — some may still be visible on the job board")
+            elif delete_fails:
+                problems.append(f"{delete_fails} job{'s' if delete_fails != 1 else ''} couldn't be deleted from the website and may still be visible")
+            if not sheets_ok:
+                problems.append("the Jobs and Skipped tabs couldn't be cleared — try running the nuke again")
+            _post_slack(
+                f":warning: *Nuke finished with errors* — {deleted} WP job(s) deleted\n"
+                + "\n".join(f"• {p}" for p in problems)
+            )
+        else:
+            _post_slack(f":boom: *Nuke complete* — {deleted} WP job(s) deleted, Jobs + Skipped tabs cleared")
 
     threading.Thread(target=_run_nuke, daemon=True).start()
     return jsonify({"status": "started", "message": "Nuking all WordPress jobs in the background"})

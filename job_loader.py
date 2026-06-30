@@ -118,6 +118,8 @@ def main():
                                 "old_title": result.get("old_title", ""),
                                 "new_title": result.get("new_title", ""),
                             })
+                        else:
+                            added_jobs.append({"company": company, "title": result.get("title", "View All Openings")})
                     else:
                         print(f"    Already processed (no changes)\n")
                     if i < len(to_scrape):
