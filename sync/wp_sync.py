@@ -195,8 +195,7 @@ def main():
     for i, row in enumerate(data, start=2):
         company   = row[COL_COMPANY].strip()  if len(row) > COL_COMPANY   else ""
         wp_status = row[COL_WP_STATUS].strip() if len(row) > COL_WP_STATUS else ""
-        app_url   = row[COL_URL].strip()       if len(row) > COL_URL       else ""
-        if company and company not in active_companies and wp_status.lower() not in ("expired", "removed", "blocked") and "linkedin.com" not in app_url.lower():
+        if company and company not in active_companies and wp_status.lower() not in ("expired", "removed", "blocked"):
             _sheets_write(jobs_ws.update_cell,i, COL_WP_STATUS + 1, "expired")
             row[COL_WP_STATUS] = "expired"
 
