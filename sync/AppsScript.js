@@ -77,20 +77,25 @@ function approveJob() {
 function addLinkedInJob() {
   const ui = SpreadsheetApp.getUi();
 
-  const companyResp = ui.prompt('Add LinkedIn job (1/3)', 'Company name:', ui.ButtonSet.OK_CANCEL);
+  const companyResp = ui.prompt('Add LinkedIn job (1/4)', 'Company name:', ui.ButtonSet.OK_CANCEL);
   if (companyResp.getSelectedButton() !== ui.Button.OK) return;
   const company = companyResp.getResponseText().trim();
   if (!company) { ui.alert('Company name is required.'); return; }
 
-  const titleResp = ui.prompt('Add LinkedIn job (2/3)', 'Job title:', ui.ButtonSet.OK_CANCEL);
+  const titleResp = ui.prompt('Add LinkedIn job (2/4)', 'Job title:', ui.ButtonSet.OK_CANCEL);
   if (titleResp.getSelectedButton() !== ui.Button.OK) return;
   const title = titleResp.getResponseText().trim();
   if (!title) { ui.alert('Job title is required.'); return; }
 
-  const urlResp = ui.prompt('Add LinkedIn job (3/3)', 'LinkedIn job URL:', ui.ButtonSet.OK_CANCEL);
+  const urlResp = ui.prompt('Add LinkedIn job (3/4)', 'LinkedIn job URL:', ui.ButtonSet.OK_CANCEL);
   if (urlResp.getSelectedButton() !== ui.Button.OK) return;
   const url = urlResp.getResponseText().trim();
   if (!url) { ui.alert('URL is required.'); return; }
+
+  const locationResp = ui.prompt('Add LinkedIn job (4/4)', 'Work arrangement (Remote / Hybrid / In Person):', ui.ButtonSet.OK_CANCEL);
+  if (locationResp.getSelectedButton() !== ui.Button.OK) return;
+  const location = locationResp.getResponseText().trim();
+  if (!location) { ui.alert('Work arrangement is required.'); return; }
 
   const expireResp = ui.alert(
     'Auto-expiration',
@@ -110,6 +115,7 @@ function addLinkedInJob() {
     company:         company,
     job_title:       title,
     application_url: url,
+    job_location:    location,
     auto_expire:     autoExpire,
   });
 

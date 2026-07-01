@@ -86,6 +86,17 @@ def _sheets():
     return sh.worksheet("Jobs"), sh.worksheet("Skipped")
 
 
+def _normalize_location(raw: str) -> str:
+    s = raw.strip().lower()
+    if s == "remote":
+        return "Remote"
+    if s == "hybrid":
+        return "Hybrid"
+    if s in ("in person", "in-person", "inperson"):
+        return "In Person"
+    return ""
+
+
 def _classify_job(title: str, company: str) -> dict:
     """Ask Claude to assign function and location for a manually approved job."""
     client = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
@@ -196,7 +207,7 @@ def approve_job():
 
     classified = _classify_job(title, company)
     function   = classified.get("job_function", "")
-    location   = classified.get("job_location", "In Person")
+    location   = _normalize_location(data.get("job_location", "")) or classified.get("job_location", "In Person")
 
     post_id = _post_to_wp(company, title, app_url, function, location)
     if not post_id:
