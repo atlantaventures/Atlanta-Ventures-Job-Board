@@ -130,7 +130,7 @@ def main():
             "added":   raw_date,
         }
 
-        if wp_status == "manual-auto" and added <= expire_cutoff:
+        if wp_status == "manual-auto" and added < expire_cutoff:
             to_expire.append(job)
         elif wp_status == "manual" and added <= remind_cutoff:
             to_remind.append(job)
