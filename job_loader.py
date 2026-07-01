@@ -165,7 +165,7 @@ def main():
                         print(f"    FAILED fetching {url} — {e}")
                         if platform == "linkedin":
                             msg = str(e).lower()
-                            if any(k in msg for k in ("404", "not found", "unexpected page title")):
+                            if "404" in msg or "not found" in msg:
                                 linkedin_gone = True
                         if company not in failed_companies:
                             failed_companies.append(company)
@@ -248,10 +248,6 @@ def main():
         "updated_jobs":       updated_jobs,
         "failed_companies":   failed_companies,
     }))
-
-    if error_count:
-        sys.exit(1)
-
 
 if __name__ == "__main__":
     main()
