@@ -14,6 +14,7 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Job Board')
     .addItem('Approve job(s) → push to WordPress', 'approveJob')
+    .addItem('Add LinkedIn job manually', 'addLinkedInJob')
     .addItem('Remove job(s) from WordPress', 'removeJob')
     .addSeparator()
     .addItem('Run scraper now', 'runScraper')
@@ -66,6 +67,55 @@ function approveJob() {
     ui.alert('Done', `${succeeded} job(s) posted to WordPress.`, ui.ButtonSet.OK);
   } else {
     ui.alert('Partial success', `${succeeded} posted, ${failed} failed.`, ui.ButtonSet.OK);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Add a LinkedIn job directly — no Skipped tab row needed.
+// Prompts for company, title, and URL, then calls /approve-job.
+// ---------------------------------------------------------------------------
+function addLinkedInJob() {
+  const ui = SpreadsheetApp.getUi();
+
+  const companyResp = ui.prompt('Add LinkedIn job (1/3)', 'Company name:', ui.ButtonSet.OK_CANCEL);
+  if (companyResp.getSelectedButton() !== ui.Button.OK) return;
+  const company = companyResp.getResponseText().trim();
+  if (!company) { ui.alert('Company name is required.'); return; }
+
+  const titleResp = ui.prompt('Add LinkedIn job (2/3)', 'Job title:', ui.ButtonSet.OK_CANCEL);
+  if (titleResp.getSelectedButton() !== ui.Button.OK) return;
+  const title = titleResp.getResponseText().trim();
+  if (!title) { ui.alert('Job title is required.'); return; }
+
+  const urlResp = ui.prompt('Add LinkedIn job (3/3)', 'LinkedIn job URL:', ui.ButtonSet.OK_CANCEL);
+  if (urlResp.getSelectedButton() !== ui.Button.OK) return;
+  const url = urlResp.getResponseText().trim();
+  if (!url) { ui.alert('URL is required.'); return; }
+
+  const confirm = ui.alert(
+    'Add LinkedIn job',
+    `Post "${title}" at ${company} to WordPress?`,
+    ui.ButtonSet.YES_NO
+  );
+  if (confirm !== ui.Button.YES) return;
+
+  const result = _post(WEBHOOK_BASE + '/approve-job', {
+    company:         company,
+    job_title:       title,
+    application_url: url,
+  });
+
+  if (result.ok) {
+    ui.alert('Done', `"${title}" at ${company} has been posted to WordPress.`, ui.ButtonSet.OK);
+  } else {
+    try {
+      const body = JSON.parse(result.body || '{}');
+      if (body.status === 'already_posted') {
+        ui.alert('Already posted', 'This job is already on the website.', ui.ButtonSet.OK);
+        return;
+      }
+    } catch (_) {}
+    ui.alert('Error', 'Could not post the job: ' + result.body, ui.ButtonSet.OK);
   }
 }
 
