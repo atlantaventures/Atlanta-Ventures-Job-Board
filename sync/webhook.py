@@ -206,12 +206,12 @@ def approve_job():
         )
         return jsonify({"error": "WordPress post failed"}), 500
 
-    # Write a "posted" row to the Jobs tab and mark the Skipped row
+    # Write a "manual" row to the Jobs tab and mark the Skipped row
     try:
         from datetime import date
         jobs_ws, skipped_ws = _sheets()
         today = date.today().isoformat()
-        jobs_ws.append_rows([[company, title, app_url, function, False, location, today, "posted"]])
+        jobs_ws.append_rows([[company, title, app_url, function, False, location, today, "manual"]])
         if skipped_row:
             skipped_ws.delete_rows(skipped_row)
     except Exception as e:

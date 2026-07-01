@@ -27,7 +27,6 @@ from fetchers.smartrecruiters import scrape_smartrecruiters
 from fetchers.workable import scrape_workable
 from fetchers.doc_loader import scrape_google_doc
 from fetchers.pdf_loader import scrape_pdf
-from fetchers.linkedin import fetch_linkedin_job
 from fetchers.web_scraper import WebScraper, extract_jobs_with_claude
 from staged_job_writer import process_company_jobs, process_evergreen_company
 
@@ -128,7 +127,7 @@ def main():
 
                 # Fetch jobs from all URLs; apply source URL as fallback for jobs without a link
                 all_jobs = []
-                linkedin_gone = False
+                has_fetch_errors = False
                 for url, platform in zip(urls, platforms):
                     try:
                         if platform == "ashby":
@@ -148,9 +147,8 @@ def main():
                         elif platform == "pdf":
                             fetched = scrape_pdf(claude, company, url)
                         elif platform == "linkedin":
-                            job = fetch_linkedin_job(url)
-                            job.pop("_company", None)
-                            fetched = [job]
+                            print(f"    LinkedIn URL skipped — manual-only ({url})")
+                            continue
                         else:
                             content = scraper.get_content(url)
                             if not content.strip():
@@ -163,10 +161,7 @@ def main():
                         all_jobs.extend(fetched)
                     except Exception as e:
                         print(f"    FAILED fetching {url} — {e}")
-                        if platform == "linkedin":
-                            msg = str(e).lower()
-                            if "404" in msg or "not found" in msg:
-                                linkedin_gone = True
+                        has_fetch_errors = True
                         if company not in failed_companies:
                             failed_companies.append(company)
                         error_count += 1
@@ -174,17 +169,13 @@ def main():
                 if not all_jobs:
                     print(f"    No jobs found\n")
                     fail_count += 1
-                    if linkedin_gone:
-                        expired = expire_removed_jobs(jobs_ws, company, set(), all_job_rows)
-                        if expired:
-                            removed_jobs.extend({"company": company, "title": t} for t in expired)
-                            print(f"    Expired {len(expired)} row(s) — LinkedIn job(s) no longer available")
                     continue
 
                 stats = process_company_jobs(
                     claude, jobs_ws, skipped_ws, companies_ws,
                     company, urls[0], sheet_row,
                     all_jobs, existing_keys, all_job_rows, today,
+                    skip_expiry=has_fetch_errors,
                 )
 
                 duplicate_jobs += stats["dupes"]

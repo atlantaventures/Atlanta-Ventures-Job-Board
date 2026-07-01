@@ -120,7 +120,7 @@ def process_company_jobs(
     client, jobs_ws, skipped_ws, companies_ws,
     company: str, url: str, sheet_row: int,
     jobs: list, existing_keys: set, all_job_rows: list,
-    today: str,
+    today: str, skip_expiry: bool = False,
 ) -> dict:
     """
     Dedup, filter, and write jobs for a regular (non-evergreen) company.
@@ -135,8 +135,9 @@ def process_company_jobs(
     jobs = [_sanitize(j) for j in jobs]
 
     # Mark jobs no longer on the careers page as expired (guard: only if scrape returned results)
+    # Skip expiry if any URL fetch failed — partial results would wrongly expire jobs from failed URLs
     current_keys  = {job_key(company, j) for j in jobs}
-    expired_titles = expire_removed_jobs(jobs_ws, company, current_keys, all_job_rows)
+    expired_titles = [] if skip_expiry else expire_removed_jobs(jobs_ws, company, current_keys, all_job_rows)
     if expired_titles:
         print(f"    {len(expired_titles)} job(s) marked expired")
 
