@@ -212,7 +212,7 @@ def approve_job():
     post_id = _post_to_wp(company, title, app_url, function, location)
     if not post_id:
         _post_slack(
-            f":x: *Failed to post job to website*\n"
+            f"<!channel> :x: *Failed to post job to website*\n"
             f"• *{company}* — {title}\n"
             f"_The website may be temporarily unavailable. Try approving it again in a few minutes._"
         )
@@ -223,7 +223,7 @@ def approve_job():
         from datetime import date
         jobs_ws, skipped_ws = _sheets()
         today = date.today().isoformat()
-        wp_status = "manual-auto" if auto_expire else "manual"
+        wp_status = ("manual-auto" if auto_expire else "manual") if not skipped_row else "posted"
         jobs_ws.append_rows([[company, title, app_url, function, False, location, today, wp_status]])
         if skipped_row:
             skipped_ws.delete_rows(skipped_row)
@@ -380,7 +380,7 @@ def nuke_jobs():
             if not sheets_ok:
                 problems.append("the Jobs and Skipped tabs couldn't be cleared — try running the nuke again")
             _post_slack(
-                f":warning: *Nuke finished with errors* — {deleted} WP job(s) deleted\n"
+                f"<!channel> :warning: *Nuke finished with errors* — {deleted} WP job(s) deleted\n"
                 + "\n".join(f"• {p}" for p in problems)
             )
         else:

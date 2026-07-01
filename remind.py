@@ -183,7 +183,7 @@ def main():
                 "text": {
                     "type": "mrkdwn",
                     "text": (
-                        ":bell: These jobs were manually added 3+ weeks ago and may need removing if the role is filled:\n"
+                        "<!channel> :bell: These jobs were manually added 3+ weeks ago and may need removing if the role is filled:\n"
                         + lines
                     ),
                 },

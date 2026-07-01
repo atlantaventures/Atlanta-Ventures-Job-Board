@@ -90,7 +90,7 @@ def _summary_blocks(date, errors, wp_post_failed, wp_delete_failed, all_ok, comp
         verdict_text = "*Jobs Synced Successfully*"
     elif has_wp_issues:
         verdict_icon = ":x:"
-        verdict_text = "*Website Sync Failed*"
+        verdict_text = "<!channel> *Website Sync Failed*"
     else:
         verdict_icon = ":warning:"
         verdict_text = "*Minor Issues — Run Completed*"
@@ -217,7 +217,7 @@ def _crash_blocks():
             "text": {
                 "type": "mrkdwn",
                 "text": (
-                    ":x: *The scraper stopped unexpectedly and did not finish.*\n"
+                    "<!channel> :x: *The scraper stopped unexpectedly and did not finish.*\n"
                     "*What to try:* Run it again from Job Board → Run Scraper Now. "
                     "If it keeps failing, restart the service in Railway."
                 ),
