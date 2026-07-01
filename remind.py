@@ -140,7 +140,8 @@ def main():
     for j in to_expire:
         print(f"remind.py: expiring {j['company']} — {j['title']} (row {j['row']})")
         deleted = _delete_from_wp(j["url"])
-        jobs_ws.update_cell(j["row"], COL_WP_STATUS + 1, "expired")
+        new_status = "removed" if deleted else "expired"
+        jobs_ws.update_cell(j["row"], COL_WP_STATUS + 1, new_status)
         expired.append({**j, "wp_deleted": deleted})
 
     if expired:
