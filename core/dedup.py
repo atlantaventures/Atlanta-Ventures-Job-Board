@@ -77,7 +77,7 @@ def expire_removed_jobs(jobs_ws, company: str, current_keys: set, all_job_rows: 
         if not row or row[0] != company:
             continue
         wp_status = row[7].strip().lower() if len(row) > 7 else ""
-        if wp_status in ("expired", "removed", "blocked"):
+        if wp_status in ("expired", "removed", "blocked", "manual", "manual-auto"):
             continue
         app_url = row[2].strip() if len(row) > 2 else ""
         title   = row[1].strip() if len(row) > 1 else ""
