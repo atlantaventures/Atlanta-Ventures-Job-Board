@@ -237,7 +237,7 @@ def main():
                 _sheets_write(jobs_ws.update_cell,i, COL_WP_STATUS + 1, "removed")
             continue
 
-        if wp_status.lower() in ("posted", "removed", "blocked"):
+        if wp_status.lower() in ("posted", "removed", "blocked", "manual", "manual-auto"):
             skipped += 1
             continue
 
