@@ -92,9 +92,16 @@ function addLinkedInJob() {
   const url = urlResp.getResponseText().trim();
   if (!url) { ui.alert('URL is required.'); return; }
 
+  const expireResp = ui.alert(
+    'Auto-expiration',
+    'Automatically remove this job after 30 days?',
+    ui.ButtonSet.YES_NO
+  );
+  const autoExpire = expireResp === ui.Button.YES;
+
   const confirm = ui.alert(
     'Add LinkedIn job',
-    `Post "${title}" at ${company} to WordPress?`,
+    `Post "${title}" at ${company} to WordPress?` + (autoExpire ? '\nWill auto-expire in 30 days.' : ''),
     ui.ButtonSet.YES_NO
   );
   if (confirm !== ui.Button.YES) return;
@@ -103,6 +110,7 @@ function addLinkedInJob() {
     company:         company,
     job_title:       title,
     application_url: url,
+    auto_expire:     autoExpire,
   });
 
   if (result.ok) {

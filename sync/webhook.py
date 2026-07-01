@@ -181,11 +181,12 @@ def approve_job():
     if err:
         return err
 
-    data       = request.json or {}
-    company    = data.get("company", "").strip()
-    title      = data.get("job_title", "").strip()
-    app_url    = data.get("application_url", "").strip()
+    data        = request.json or {}
+    company     = data.get("company", "").strip()
+    title       = data.get("job_title", "").strip()
+    app_url     = data.get("application_url", "").strip()
     skipped_row = data.get("row_number")
+    auto_expire = bool(data.get("auto_expire", False))
 
     if not company or not title:
         return jsonify({"error": "Missing company or job_title"}), 400
@@ -211,7 +212,8 @@ def approve_job():
         from datetime import date
         jobs_ws, skipped_ws = _sheets()
         today = date.today().isoformat()
-        jobs_ws.append_rows([[company, title, app_url, function, False, location, today, "manual"]])
+        wp_status = "manual-auto" if auto_expire else "manual"
+        jobs_ws.append_rows([[company, title, app_url, function, False, location, today, wp_status]])
         if skipped_row:
             skipped_ws.delete_rows(skipped_row)
     except Exception as e:
