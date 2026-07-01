@@ -80,6 +80,8 @@ def expire_removed_jobs(jobs_ws, company: str, current_keys: set, all_job_rows: 
         if wp_status in ("expired", "removed", "blocked"):
             continue
         app_url = row[2].strip() if len(row) > 2 else ""
+        if "linkedin.com" in app_url.lower():
+            continue
         title   = row[1].strip() if len(row) > 1 else ""
         is_gdoc = "docs.google.com" in app_url
         key = (normalize_url(app_url) if (app_url and not is_gdoc) else f"{company}|{title}".lower())
@@ -102,8 +104,11 @@ def expire_deleted_companies(jobs_ws, active_companies: set, all_job_rows: list)
             continue
         company   = row[0].strip() if len(row) > 0 else ""
         title     = row[1].strip() if len(row) > 1 else ""
+        app_url   = row[2].strip() if len(row) > 2 else ""
         wp_status = row[7].strip().lower() if len(row) > 7 else ""
         if not company or wp_status in ("expired", "removed", "blocked"):
+            continue
+        if "linkedin.com" in app_url.lower():
             continue
         if company.lower() not in active_lower:
             sheets_write(jobs_ws.update_cell, i, 8, "expired")
