@@ -5,8 +5,8 @@
 // Fill in WEBHOOK_BASE and WEBHOOK_SECRET before using.
 // ============================================================
 
-const WEBHOOK_BASE   = 'YOUR_DO_IP_OR_DOMAIN';
-const WEBHOOK_SECRET = 'YOUR_WEBHOOK_SECRET';
+const WEBHOOK_BASE   = PropertiesService.getScriptProperties().getProperty('WEBHOOK_BASE');
+const WEBHOOK_SECRET = PropertiesService.getScriptProperties().getProperty('WEBHOOK_SECRET');
 
 // ---------------------------------------------------------------------------
 

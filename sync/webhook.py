@@ -101,7 +101,7 @@ def _classify_job(title: str, company: str) -> dict:
     """Ask Claude to assign function and location for a manually approved job."""
     client = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
     prompt = f"""Given this job title "{title}" at "{company}", return a JSON object with:
-- "job_function": exactly one of "Engineering", "Sales", "Marketing", "Operations", "Finance", or ""
+- "job_function": exactly one of "Engineering", "Sales", "Marketing", "Operations", "Finance" — pick the closest match, never return empty
 - "job_location": exactly one of "Remote", "Hybrid", "In Person"
 
 Return ONLY the JSON object, no explanation."""
@@ -118,7 +118,7 @@ Return ONLY the JSON object, no explanation."""
     try:
         return json.loads(text)
     except Exception:
-        return {"job_function": "", "job_location": "In Person"}
+        return {"job_function": "Operations", "job_location": "In Person"}
 
 
 def _post_to_wp(company: str, title: str, url: str, function: str, location: str) -> int | None:
@@ -206,7 +206,7 @@ def approve_job():
         return jsonify({"status": "already_posted", "message": "Job already exists on WordPress"}), 409
 
     classified = _classify_job(title, company)
-    function   = classified.get("job_function", "")
+    function   = classified.get("job_function", "") or "Operations"
     location   = _normalize_location(data.get("job_location", "")) or classified.get("job_location", "In Person")
 
     post_id = _post_to_wp(company, title, app_url, function, location)
