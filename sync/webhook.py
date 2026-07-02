@@ -253,7 +253,7 @@ def remove_job():
     try:
         jobs_ws, _ = _sheets()
         if job_row:
-            jobs_ws.update_cell(job_row, COL_WP_STATUS + 1, "removed")
+            jobs_ws.update_cell(job_row, COL_WP_STATUS + 1, "blocked")
     except Exception as e:
         print(f"Sheet update error after remove: {e}")
 
@@ -284,10 +284,11 @@ def run_scraper():
         _post_slack(":hourglass_flowing_sand: *Scraper already running* — a scrape is already in progress. Check back in a few minutes.")
         return jsonify({"status": "already_running", "message": "A scraper run is already in progress"}), 409
 
+    _LOCK_FILE.touch()
+
     repo_root = Path(__file__).parent.parent
 
     def _run():
-        _LOCK_FILE.touch()
         try:
             subprocess.run(["bash", "run.sh"], cwd=str(repo_root))
         finally:

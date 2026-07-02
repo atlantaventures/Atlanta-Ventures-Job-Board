@@ -75,7 +75,7 @@ def expire_removed_jobs(jobs_ws, company: str, current_keys: set, all_job_rows: 
         if not row or row[0] != company:
             continue
         wp_status = row[7].strip().lower() if len(row) > 7 else ""
-        if wp_status in ("expired", "removed"):
+        if wp_status in ("expired", "removed", "blocked", "manual", "manual-auto"):
             continue
         app_url = row[2].strip() if len(row) > 2 else ""
         if "linkedin.com" in app_url.lower():
@@ -104,7 +104,7 @@ def expire_deleted_companies(jobs_ws, active_companies: set, all_job_rows: list)
         title     = row[1].strip() if len(row) > 1 else ""
         app_url   = row[2].strip() if len(row) > 2 else ""
         wp_status = row[7].strip().lower() if len(row) > 7 else ""
-        if not company or wp_status in ("expired", "removed"):
+        if not company or wp_status in ("expired", "removed", "blocked", "manual", "manual-auto"):
             continue
         if "linkedin.com" in app_url.lower():
             continue
@@ -129,7 +129,7 @@ def expire_stale_evergreen_rows(jobs_ws, company: str, current_key: str, all_job
         if not row or row[0] != company:
             continue
         wp_status = row[7].strip().lower() if len(row) > 7 else ""
-        if wp_status in ("expired", "removed"):
+        if wp_status in ("expired", "removed", "blocked", "manual", "manual-auto"):
             continue
         row_key = normalize_url(row[2]) if len(row) > 2 else ""
         if row_key and row_key != current_key:
