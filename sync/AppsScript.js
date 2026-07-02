@@ -5,8 +5,8 @@
 // Fill in WEBHOOK_BASE and WEBHOOK_SECRET before using.
 // ============================================================
 
-const WEBHOOK_BASE   = PropertiesService.getScriptProperties().getProperty('WEBHOOK_BASE');
-const WEBHOOK_SECRET = PropertiesService.getScriptProperties().getProperty('WEBHOOK_SECRET');
+const WEBHOOK_BASE   = 'YOUR_DO_IP_OR_DOMAIN';
+const WEBHOOK_SECRET = 'YOUR_WEBHOOK_SECRET';
 
 // ---------------------------------------------------------------------------
 
@@ -18,8 +18,6 @@ function onOpen() {
     .addItem('Remove job(s) from WordPress', 'removeJob')
     .addSeparator()
     .addItem('Run scraper now', 'runScraper')
-    .addSeparator()
-    .addItem('⚠️ Nuke all jobs (WP + sheet)', 'nukeAllJobs')
     .addToUi();
 }
 
@@ -195,40 +193,6 @@ function runScraper() {
     ui.alert('Started', 'Scraper is running. New jobs will appear in the Jobs tab when it finishes.', ui.ButtonSet.OK);
   } else {
     ui.alert('Error', 'Could not start the scraper: ' + result.body, ui.ButtonSet.OK);
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Nuke: delete every job from WordPress AND clear the Jobs + Skipped tabs.
-// Requires typing "NUKE" to confirm — this cannot be undone.
-// ---------------------------------------------------------------------------
-function nukeAllJobs() {
-  const ui = SpreadsheetApp.getUi();
-
-  const first = ui.alert(
-    '⚠️ Nuke all jobs',
-    'This will permanently delete EVERY job from WordPress and clear the Jobs and Skipped tabs. This cannot be undone.\n\nAre you sure?',
-    ui.ButtonSet.YES_NO
-  );
-  if (first !== ui.Button.YES) return;
-
-  const second = ui.prompt(
-    'Final confirmation',
-    'Type NUKE to confirm:',
-    ui.ButtonSet.OK_CANCEL
-  );
-  if (second.getSelectedButton() !== ui.Button.OK) return;
-  if (second.getResponseText().trim() !== 'NUKE') {
-    ui.alert('Cancelled', 'You did not type NUKE — nothing was changed.', ui.ButtonSet.OK);
-    return;
-  }
-
-  const result = _post(WEBHOOK_BASE + '/nuke', {});
-
-  if (result.ok) {
-    ui.alert('Nuke started', 'All jobs are being deleted from WordPress and the sheet is being cleared.', ui.ButtonSet.OK);
-  } else {
-    ui.alert('Error', 'Nuke failed: ' + result.body, ui.ButtonSet.OK);
   }
 }
 
