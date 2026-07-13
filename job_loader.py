@@ -46,6 +46,10 @@ JOBS_TAB          = "Jobs"
 DELAY_SECONDS     = 2
 
 
+def _is_model_error(e):
+    return isinstance(e, (anthropic.NotFoundError, anthropic.BadRequestError)) and "model" in str(e).lower()
+
+
 def main():
     gc = gspread.service_account(filename=str(CREDENTIALS_FILE))
     sh = gc.open_by_key(SHEET_ID)
@@ -83,6 +87,7 @@ def main():
     total_jobs     = 0
     duplicate_jobs = 0
     filtered_jobs  = 0
+    model_error    = False
     added_jobs       = []              # [{"company": str, "title": str}, ...]
     removed_jobs     = deleted_expired  # pre-seeded with deleted-company jobs
     updated_jobs     = []              # [{"company": str, "old_title": str, "new_title": str}, ...]
@@ -165,6 +170,8 @@ def main():
                         if company not in failed_companies:
                             failed_companies.append(company)
                         error_count += 1
+                        if _is_model_error(e):
+                            model_error = True
 
                 if not all_jobs:
                     print(f"    No jobs found\n")
@@ -208,6 +215,8 @@ def main():
                 fail_count       += 1
                 error_count      += 1
                 failed_companies.append(company)
+                if _is_model_error(e):
+                    model_error = True
 
             if i < len(to_scrape):
                 time.sleep(DELAY_SECONDS)
@@ -234,6 +243,7 @@ def main():
         "duplicates_skipped": duplicate_jobs,
         "errors":             error_count,
         "scraper_ok":         error_count == 0,
+        "model_error":        model_error,
         "added_jobs":         added_jobs,
         "removed_jobs":       removed_jobs,
         "updated_jobs":       updated_jobs,

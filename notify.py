@@ -6,7 +6,10 @@ Posts to Slack only if SLACK_WEBHOOK_URL is set.
 import json
 import os
 import requests
+from dotenv import load_dotenv
 from pathlib import Path
+
+load_dotenv()
 
 STATS_FILE        = Path("/tmp/run_stats.json")
 SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "")
@@ -27,11 +30,16 @@ def main():
     STATS_FILE.unlink(missing_ok=True)
 
     scraper_ok       = stats.get("scraper_ok", False)
+    model_error      = stats.get("model_error", False)
     wp_post_failed   = stats.get("wp_failed", 0)
     wp_delete_failed = stats.get("wp_delete_failed", 0)
     wp_failed        = wp_post_failed + wp_delete_failed
     wp_ok            = stats.get("wp_ok", False)
     all_ok           = scraper_ok and wp_ok and wp_failed == 0
+
+    if model_error:
+        _post_slack_blocks(_model_error_blocks())
+        return
 
     errors           = stats.get("errors", 0)
     companies        = stats.get("companies_scraped", 0)
@@ -204,6 +212,25 @@ def _summary_blocks(date, errors, wp_post_failed, wp_delete_failed, all_ok, comp
     })
 
     return blocks
+
+
+def _model_error_blocks():
+    return [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": "Atlanta Ventures Job Board — Action Required"},
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": (
+                    "<!channel> :x: *The AI model is invalid or has been deprecated — the scraper did not run.*\n"
+                    "*What to do:* Update the model string in Railway environment variables and redeploy."
+                ),
+            },
+        },
+    ]
 
 
 def _crash_blocks():
