@@ -8,8 +8,7 @@ Dedup layers:
   2. WordPress-side: fetches all existing job_link values before posting
 
 Posting strategy:
-  - Attempts batch posts (up to BATCH_SIZE per HTTP request) via /wp-json/batch/v1
-  - Falls back to individual posts with a 2s delay if batch endpoint is unavailable
+  - Posts jobs individually via /wp-json/wp/v2/av_job with a 2s delay between each
 
 Usage:
     python3 sync/wp_sync.py
@@ -44,8 +43,6 @@ HEADERS = {
     "User-Agent":   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 }
 
-BATCH_SIZE = 10
-
 # Column indices in the Jobs tab (0-indexed)
 COL_COMPANY     = 0
 COL_TITLE       = 1
@@ -56,10 +53,6 @@ COL_LOCATION    = 5
 COL_WP_STATUS   = 7  # column 8 in sheet (1-indexed)
 COL_DESCRIPTION = 8  # column 9 — only populated for evergreen companies
 
-
-def _chunks(lst, n):
-    for i in range(0, len(lst), n):
-        yield lst[i:i + n]
 
 
 def _sheets_write(fn, *args, **kwargs):
@@ -145,30 +138,6 @@ def post_job(job: dict) -> bool:
     return resp.status_code in (200, 201)
 
 
-def post_jobs_batch(jobs: list):
-    """
-    POST a batch of jobs via /wp-json/batch/v1.
-    Returns a list of booleans (True = success) in input order,
-    or None if the batch endpoint is unavailable.
-    """
-    payload = {
-        "requests": [
-            {"method": "POST", "path": "/wp/v2/av_job", "body": _build_payload(j)}
-            for j in jobs
-        ]
-    }
-    resp = requests.post(
-        f"{WP_URL}/wp-json/batch/v1",
-        json=payload,
-        auth=AUTH,
-        headers=HEADERS,
-        timeout=60,
-    )
-    if resp.status_code == 404:
-        return None  # endpoint not available — caller falls back to individual posts
-    resp.raise_for_status()
-    responses = resp.json().get("responses", [])
-    return [r.get("status", 500) in (200, 201) for r in responses]
 
 
 def main():
@@ -257,42 +226,19 @@ def main():
             "description":     col(COL_DESCRIPTION),  # only set for evergreen; ignored for others
         }, title))
 
-    # Second pass: post pending jobs in batches, fall back to individual if needed
+    # Second pass: post pending jobs individually
     if pending:
         print(f"Posting {len(pending)} new job(s)...\n")
 
-    use_batch = True
-    for chunk in _chunks(pending, BATCH_SIZE):
-        chunk_jobs  = [j for _, j, _ in chunk]
-        chunk_meta  = [(i, t) for i, _, t in chunk]
-
-        if use_batch:
-            results = post_jobs_batch(chunk_jobs)
-            if results is None:
-                print("  Batch endpoint unavailable — switching to individual posts")
-                use_batch = False
-            else:
-                for (row_i, title), success in zip(chunk_meta, results):
-                    if success:
-                        _sheets_write(jobs_ws.update_cell,row_i, COL_WP_STATUS + 1, "posted")
-                        posted += 1
-                        print(f"  Posted:  {title}")
-                    else:
-                        failed += 1
-                        print(f"  FAILED:  {title}")
-                time.sleep(2)
-                continue
-
-        # Individual fallback
-        for (row_i, title), job in zip(chunk_meta, chunk_jobs):
-            if post_job(job):
-                _sheets_write(jobs_ws.update_cell,row_i, COL_WP_STATUS + 1, "posted")
-                posted += 1
-                print(f"  Posted:  {title}")
-            else:
-                failed += 1
-                print(f"  FAILED:  {title}")
-            time.sleep(2)
+    for row_i, job, title in pending:
+        if post_job(job):
+            _sheets_write(jobs_ws.update_cell, row_i, COL_WP_STATUS + 1, "posted")
+            posted += 1
+            print(f"  Posted:  {title}")
+        else:
+            failed += 1
+            print(f"  FAILED:  {title}")
+        time.sleep(2)
 
     print(f"\n{'=' * 40}")
     print(f"  Posted  : {posted}")
