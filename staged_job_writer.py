@@ -7,6 +7,7 @@ Also handles evergreen company listings (one row per company, no Claude pass nee
 """
 
 import json
+import os
 import re
 
 import anthropic
@@ -82,7 +83,7 @@ Return a JSON array with one entry per job in the same order:
 Return ONLY the JSON array, no explanation, no markdown."""
 
     response = client.messages.create(
-        model="claude-haiku-4-5-20251001",
+        model=os.environ["ANTHROPIC_MODEL"],
         max_tokens=4000,
         temperature=0,
         messages=[{"role": "user", "content": prompt}],

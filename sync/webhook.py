@@ -106,7 +106,7 @@ def _classify_job(title: str, company: str) -> dict:
 
 Return ONLY the JSON object, no explanation."""
     resp = client.messages.create(
-        model="claude-haiku-4-5-20251001",
+        model=os.environ["ANTHROPIC_MODEL"],
         max_tokens=100,
         temperature=0,
         messages=[{"role": "user", "content": prompt}],

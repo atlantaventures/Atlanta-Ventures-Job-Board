@@ -1,4 +1,5 @@
 import json
+import os
 import re
 
 import anthropic
@@ -70,7 +71,7 @@ Page content:
 {content}
 """
     response = client.messages.create(
-        model="claude-haiku-4-5-20251001",
+        model=os.environ["ANTHROPIC_MODEL"],
         max_tokens=8000,
         temperature=0,
         messages=[{"role": "user", "content": prompt}],
