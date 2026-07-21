@@ -105,6 +105,8 @@ def delete_job(post_id: int) -> bool:
         headers=HEADERS,
         timeout=30,
     )
+    if resp.status_code != 200:
+        print(f"    HTTP {resp.status_code}: {resp.text[:200]}")
     return resp.status_code == 200
 
 
