@@ -35,7 +35,14 @@ def main():
     wp_delete_failed = stats.get("wp_delete_failed", 0)
     wp_failed        = wp_post_failed + wp_delete_failed
     wp_ok            = stats.get("wp_ok", False)
-    all_ok           = scraper_ok and wp_ok and wp_failed == 0
+    wp_crashed       = stats.get("wp_crashed", False)
+    wp_crash_error   = stats.get("wp_crash_error", "")
+    platform_wide_breaks = stats.get("platform_wide_breaks", [])
+    platform_failures    = stats.get("platform_failures", {})
+    all_ok           = (
+        scraper_ok and wp_ok and wp_failed == 0
+        and not wp_crashed and not platform_wide_breaks
+    )
 
     if model_error:
         _post_slack_blocks(_model_error_blocks())
@@ -53,9 +60,33 @@ def main():
     # Plain-text version for Railway logs
     print(f"Job Board Run — {date}")
     print(f"  {'OK' if all_ok else 'WARNING'} | {companies} companies | {len(added_jobs)} new | {len(removed_jobs)} removed | {errors} errors")
+    if platform_wide_breaks:
+        print(f"  PLATFORM-WIDE BREAK SUSPECTED: {', '.join(platform_wide_breaks)}")
+    if wp_crashed:
+        print(f"  WEBSITE SYNC CRASHED: {wp_crash_error}")
 
-    _post_slack_blocks(_summary_blocks(date, errors, wp_post_failed, wp_delete_failed, all_ok, companies, filtered_out, added_jobs, removed_jobs, updated_jobs, failed_companies))
+    _post_slack_blocks(_summary_blocks(
+        date, errors, wp_post_failed, wp_delete_failed, all_ok, companies, filtered_out,
+        added_jobs, removed_jobs, updated_jobs, failed_companies,
+        platform_wide_breaks, platform_failures, wp_crashed, wp_crash_error,
+    ))
 
+
+# platform values from core/utils.detect_platform() don't all map to a same-named
+# fetcher file — "custom"/"googledoc"/"pdf" route through web_scraper.py/doc_loader.py/
+# pdf_loader.py, so pointing at "fetchers/{platform}.py" literally would send someone
+# to a file that doesn't exist for exactly the platforms most likely to trip this alert.
+_PLATFORM_INFO = {
+    "ashby":           ("Ashby", "fetchers/ashby.py"),
+    "breezy":          ("Breezy", "fetchers/breezy.py"),
+    "greenhouse":      ("Greenhouse", "fetchers/greenhouse.py"),
+    "lever":           ("Lever", "fetchers/lever.py"),
+    "smartrecruiters": ("SmartRecruiters", "fetchers/smartrecruiters.py"),
+    "workable":        ("Workable", "fetchers/workable.py"),
+    "googledoc":       ("Google Doc extraction", "fetchers/doc_loader.py"),
+    "pdf":             ("PDF extraction", "fetchers/pdf_loader.py"),
+    "custom":          ("generic page extraction", "fetchers/web_scraper.py"),
+}
 
 _MAX_JOB_LINES = 30   # cap per section so the message doesn't become a wall of text
 
@@ -79,23 +110,31 @@ def _job_list_text(jobs: list, cap: int = _MAX_JOB_LINES) -> str:
     return "\n".join(lines)
 
 
-def _summary_blocks(date, errors, wp_post_failed, wp_delete_failed, all_ok, companies=0, filtered_out=0, added_jobs=None, removed_jobs=None, updated_jobs=None, failed_companies=None):
+def _summary_blocks(date, errors, wp_post_failed, wp_delete_failed, all_ok, companies=0, filtered_out=0, added_jobs=None, removed_jobs=None, updated_jobs=None, failed_companies=None, platform_wide_breaks=None, platform_failures=None, wp_crashed=False, wp_crash_error=""):
     added_jobs       = added_jobs       or []
     removed_jobs     = removed_jobs     or []
     updated_jobs     = updated_jobs     or []
     failed_companies = failed_companies or []
+    platform_wide_breaks = platform_wide_breaks or []
+    platform_failures    = platform_failures    or {}
 
     n_added    = len(added_jobs)
     n_removed  = len(removed_jobs)
     n_updated  = len(updated_jobs)
     has_wp_issues    = wp_post_failed > 0 or wp_delete_failed > 0
     has_scrape_errors = errors > 0
-    has_errors        = has_scrape_errors or has_wp_issues
+    has_errors        = has_scrape_errors or has_wp_issues or wp_crashed or bool(platform_wide_breaks)
 
-    # ── Verdict line — three severity tiers ───────────────────────────────────
+    # ── Verdict line — four severity tiers, loudest first ─────────────────────
     if all_ok:
         verdict_icon = ":white_check_mark:"
         verdict_text = "*Jobs Synced Successfully*"
+    elif platform_wide_breaks:
+        verdict_icon = ":rotating_light:"
+        verdict_text = "<!channel> *Likely API Change — Every Company On A Platform Failed*"
+    elif wp_crashed:
+        verdict_icon = ":x:"
+        verdict_text = "<!channel> *Website Sync Crashed*"
     elif has_wp_issues:
         verdict_icon = ":x:"
         verdict_text = "<!channel> *Website Sync Failed*"
@@ -138,13 +177,31 @@ def _summary_blocks(date, errors, wp_post_failed, wp_delete_failed, all_ok, comp
     # ── Error details ─────────────────────────────────────────────────────────
     if has_errors:
         error_lines = []
-        if failed_companies:
-            names = ", ".join(failed_companies)
+        platform_wide_companies = set()
+        if platform_wide_breaks:
+            for platform in platform_wide_breaks:
+                names = platform_failures.get(platform, [])
+                platform_wide_companies.update(names)
+                display, filename = _PLATFORM_INFO.get(platform, (platform.capitalize(), f"fetchers/{platform}.py"))
+                error_lines.append(
+                    f"• :rotating_light: *Every {display} company failed this run* — {', '.join(names)}\n"
+                    f"  _This is not a per-company issue — {display} most likely changed its response format. "
+                    f"Check {filename} against a live response before anything else in this list._"
+                )
+        if wp_crashed:
+            error_lines.append(
+                f"• :x: *Website sync crashed and did not finish* — no new jobs were published and expired jobs were not removed this run.\n"
+                f"  _Error: {wp_crash_error[:300]}_"
+            )
+        # Companies already explained by a platform-wide break above aren't repeated here
+        other_failed = [c for c in failed_companies if c not in platform_wide_companies]
+        if other_failed:
+            names = ", ".join(other_failed)
             error_lines.append(
                 f"• *Scrape failed* — {names}\n"
                 f"  _The careers page may be temporarily down, or the URL in the Companies tab may need updating._"
             )
-        elif has_scrape_errors:
+        elif has_scrape_errors and not platform_wide_breaks:
             n = errors
             error_lines.append(
                 f"• *{n}* compan{'ies' if n != 1 else 'y'} couldn't be scraped. "

@@ -14,6 +14,7 @@ Usage:
     python3 sync/wp_sync.py
 """
 
+import json
 import os
 import sys
 import time
@@ -81,7 +82,17 @@ def get_existing_wp_jobs() -> dict:
             timeout=30,
         )
         if resp.status_code == 400:
-            break
+            # WordPress returns 400 with code "rest_post_invalid_page_number" when `page`
+            # exceeds the last page — that's the intended pagination-exhausted signal.
+            # Any other 400 (broken route, plugin conflict, schema change) must not be
+            # swallowed the same way, or a real API break would look like "no more jobs."
+            try:
+                err_code = resp.json().get("code", "")
+            except Exception:
+                err_code = ""
+            if err_code == "rest_post_invalid_page_number":
+                break
+            raise RuntimeError(f"WordPress returned 400 fetching existing jobs (page {page}): {resp.text[:300]}")
         resp.raise_for_status()
         batch = resp.json()
         if not batch:
@@ -251,7 +262,6 @@ def main():
         print(f"  Del fail: {delete_failed}")
     print(f"{'=' * 40}")
 
-    import json
     stats_path = Path("/tmp/run_stats.json")
     existing   = json.loads(stats_path.read_text()) if stats_path.exists() else {}
     existing.update({
@@ -268,5 +278,25 @@ def main():
         sys.exit(1)
 
 
+def _write_crash_stats(error: str):
+    """
+    run.sh runs this script as `python3 sync/wp_sync.py || true`, so an uncaught
+    exception here would otherwise vanish silently — job_loader.py's stats file
+    already exists (it runs first), so notify.py would read stale wp_* fields
+    and report a misleadingly mild "Minor Issues" instead of "sync never ran."
+    """
+    stats_path = Path("/tmp/run_stats.json")
+    existing   = json.loads(stats_path.read_text()) if stats_path.exists() else {}
+    existing.update({"wp_ok": False, "wp_crashed": True, "wp_crash_error": error[:500]})
+    stats_path.write_text(json.dumps(existing))
+
+
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception as e:
+        print(f"wp_sync.py crashed: {e}")
+        _write_crash_stats(str(e))
+        sys.exit(1)

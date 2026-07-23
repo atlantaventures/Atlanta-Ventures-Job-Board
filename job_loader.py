@@ -10,6 +10,7 @@ Run:
 import os
 import sys
 import time
+from collections import defaultdict
 from datetime import date
 from pathlib import Path
 
@@ -17,7 +18,7 @@ import anthropic
 import gspread
 from dotenv import find_dotenv, load_dotenv
 
-from core.utils import detect_platform
+from core.utils import detect_platform, compute_platform_wide_breaks
 from core.dedup import load_existing_keys, expire_deleted_companies, expire_removed_jobs
 from fetchers.ashby import scrape_ashby
 from fetchers.breezy import scrape_breezy
@@ -25,6 +26,7 @@ from fetchers.greenhouse import scrape_greenhouse
 from fetchers.lever import scrape_lever
 from fetchers.smartrecruiters import scrape_smartrecruiters
 from fetchers.workable import scrape_workable
+from fetchers.recruitee import scrape_recruitee
 from fetchers.doc_loader import scrape_google_doc
 from fetchers.pdf_loader import scrape_pdf
 from fetchers.web_scraper import WebScraper, extract_jobs_with_claude
@@ -92,6 +94,8 @@ def main():
     removed_jobs     = deleted_expired  # pre-seeded with deleted-company jobs
     updated_jobs     = []              # [{"company": str, "old_title": str, "new_title": str}, ...]
     failed_companies = []              # company names that threw an exception
+    platform_attempts = defaultdict(int)   # platform -> URLs attempted this run
+    platform_failures = defaultdict(set)   # platform -> companies whose fetch raised
 
     with WebScraper() as scraper:
         for i, (sheet_row, row) in enumerate(to_scrape, start=1):
@@ -135,6 +139,7 @@ def main():
                 has_fetch_errors = False
                 for url, platform in zip(urls, platforms):
                     try:
+                        platform_attempts[platform] += 1
                         if platform == "ashby":
                             fetched = scrape_ashby(url)
                         elif platform == "breezy":
@@ -147,6 +152,8 @@ def main():
                             fetched = scrape_smartrecruiters(url)
                         elif platform == "workable":
                             fetched = scrape_workable(url)
+                        elif platform == "recruitee":
+                            fetched = scrape_recruitee(url)
                         elif platform == "googledoc":
                             fetched = scrape_google_doc(claude, company, url)
                         elif platform == "pdf":
@@ -170,6 +177,7 @@ def main():
                         if company not in failed_companies:
                             failed_companies.append(company)
                         error_count += 1
+                        platform_failures[platform].add(company)
                         if _is_model_error(e):
                             model_error = True
 
@@ -221,6 +229,10 @@ def main():
             if i < len(to_scrape):
                 time.sleep(DELAY_SECONDS)
 
+    platform_wide_breaks = compute_platform_wide_breaks(platform_attempts, platform_failures)
+    if platform_wide_breaks:
+        print(f"  Platform-wide break suspected: {', '.join(platform_wide_breaks)}\n")
+
     print("=" * 50)
     print(f"DONE")
     print(f"  Companies with relevant jobs   : {success_count}")
@@ -248,6 +260,8 @@ def main():
         "removed_jobs":       removed_jobs,
         "updated_jobs":       updated_jobs,
         "failed_companies":   failed_companies,
+        "platform_wide_breaks": platform_wide_breaks,
+        "platform_failures":  {p: sorted(c) for p, c in platform_failures.items() if c},
     }))
 
 if __name__ == "__main__":

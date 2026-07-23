@@ -1,6 +1,7 @@
 import requests
 
 from core.normalize import normalize_function
+from core.utils import expect_key
 
 
 _WORKPLACE_MAP = {
@@ -22,7 +23,7 @@ def scrape_ashby(url: str) -> list:
         return []
     resp.raise_for_status()
     jobs = []
-    for j in resp.json().get("jobs", []):
+    for j in expect_key(resp.json(), "jobs", "Ashby"):
         title    = j.get("title", "")
         team     = j.get("team", "")
         dept     = j.get("department", "")

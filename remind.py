@@ -202,4 +202,27 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        # run.sh runs this as `python3 remind.py || true`, so without this the
+        # exit code is discarded and a crash here (Sheets auth, WP down, etc.)
+        # would otherwise vanish with no Slack notification at all.
+        print(f"remind.py: crashed — {e}")
+        _post_slack([
+            {
+                "type": "header",
+                "text": {"type": "plain_text", "text": "Job Board — Reminder Check Failed"},
+            },
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": (
+                        f"<!channel> :x: *The daily auto-expire/reminder check crashed and did not finish.*\n"
+                        f"_Error: {str(e)[:300]}_"
+                    ),
+                },
+            },
+        ])
+        raise

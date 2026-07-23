@@ -1,7 +1,7 @@
 import requests
 
 from core.normalize import normalize_function, normalize_location
-from core.utils import extract_slug
+from core.utils import extract_slug, expect_list
 
 
 def scrape_lever(url: str) -> list:
@@ -15,9 +15,7 @@ def scrape_lever(url: str) -> list:
     if resp.status_code == 404:
         return []
     resp.raise_for_status()
-    data = resp.json()
-    if not isinstance(data, list):
-        return []
+    data = expect_list(resp.json(), "Lever")
     jobs = []
     for p in data:
         title     = p.get("text", "")

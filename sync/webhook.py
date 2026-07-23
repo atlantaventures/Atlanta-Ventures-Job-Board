@@ -1,5 +1,5 @@
 """
-Webhook server — runs on Digital Ocean alongside the scraper.
+Webhook server — runs on Railway alongside the scraper.
 Receives calls from the Google Sheets Apps Script menu.
 
 Endpoints:

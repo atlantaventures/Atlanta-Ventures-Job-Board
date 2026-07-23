@@ -7,6 +7,7 @@ import anthropic
 import requests
 
 from core.normalize import normalize_function, normalize_location
+from core.utils import expect_list, ScrapeShapeError
 
 
 def _normalize_pdf_url(url: str) -> str:
@@ -74,10 +75,8 @@ PDF content is attached above."""
     try:
         result = json.loads(text)
     except json.JSONDecodeError:
-        print(f"    Claude returned invalid JSON for PDF extraction — skipping")
-        return []
-    if not isinstance(result, list):
-        return []
+        raise ScrapeShapeError(f"Claude returned invalid JSON for PDF extraction at {company}: {text[:200]!r}")
+    result = expect_list(result, f"Claude PDF extraction for {company}")
     for job in result:
         job["job_location"] = normalize_location(job.get("job_location", ""))
         job["job_function"]  = normalize_function(job.get("job_function", ""))

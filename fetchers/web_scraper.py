@@ -6,6 +6,7 @@ import anthropic
 from playwright.sync_api import sync_playwright
 
 from core.normalize import normalize_function, normalize_location
+from core.utils import expect_list, ScrapeShapeError
 
 PAGE_TIMEOUT = 15000
 
@@ -82,10 +83,8 @@ Page content:
     try:
         result = json.loads(text)
     except json.JSONDecodeError:
-        print(f"    Claude returned invalid JSON for job extraction — skipping")
-        return []
-    if not isinstance(result, list):
-        return []
+        raise ScrapeShapeError(f"Claude returned invalid JSON for job extraction at {company}: {text[:200]!r}")
+    result = expect_list(result, f"Claude job extraction for {company}")
     for job in result:
         job["job_location"] = normalize_location(job.get("job_location", ""))
         job["job_function"] = normalize_function(job.get("job_function", ""))
