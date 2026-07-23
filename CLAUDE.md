@@ -24,6 +24,16 @@ with Claude, stores them in a Google Sheet, and syncs them to the
 atlantaventures.com WordPress job board. It runs on a schedule via a cron
 trigger hitting a webhook.
 
+## Additional documentation
+
+There's a documentation tab in the job board's Google Sheet with more
+written background on the system, kept separate from the `Companies`/`Jobs`/
+`Skipped` tabs the pipeline reads and writes:
+https://docs.google.com/spreadsheets/d/18kA-fyuvR0nQUm_82e6SmYqsqbM5bNbFfrEVoI6U1Ig/edit?gid=2038823298#gid=2038823298
+
+Treat this as a lookup, not something to read by default — open it only when
+a question isn't already answered by this file.
+
 ## Pipeline order (run.sh)
 
 1. `job_loader.py` — reads the `Companies` tab, routes each company's Careers
@@ -115,6 +125,25 @@ missed job:**
 | "Website Sync Failed" (no crash) | Some individual posts/deletes failed, sync otherwise ran | Usually transient — will retry next run |
 | "AI model is invalid or deprecated" | `ANTHROPIC_MODEL` env var is wrong/retired | Railway env vars, not application code |
 | Run stopped unexpectedly (no stats file at all) | `job_loader.py` crashed before writing any stats | Check the crash traceback in host logs |
+
+## Fixing a deprecated/invalid model (Railway, not code)
+
+When Slack reports "AI model is invalid or deprecated," the fix is a
+one-line environment variable change in Railway (`ANTHROPIC_MODEL`) — do
+**not** open a PR or touch any file for this. Two things make it non-trivial
+for someone without repo access:
+
+- Railway has separate Staging and Production environments, each with its
+  own copy of `ANTHROPIC_MODEL`. Check which environment(s) actually run the
+  failing model — both may need updating, not just one.
+- Changing a variable in Railway does **not** auto-redeploy the service.
+  Whoever updates it must also manually trigger a redeploy for each
+  environment they changed, or the old value keeps running.
+
+This is why this particular fix is "guide a human through Railway's
+dashboard" rather than "open a PR" — see the Slack channel's custom
+instructions for the plain-language walkthrough to give a non-technical
+person.
 
 ## Workflow for a fix
 
