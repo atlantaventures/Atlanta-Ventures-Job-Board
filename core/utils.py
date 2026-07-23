@@ -34,6 +34,20 @@ def expect_key(data, key: str, context: str) -> list:
     return expect_list(data[key], f"{context}.{key}")
 
 
+def compute_platform_wide_breaks(platform_attempts: dict, platform_failures: dict) -> list:
+    """
+    A platform where every attempted company failed this run is a much stronger
+    signal than an isolated failure — almost always the vendor's ATS API/response
+    shape changed, not that N unrelated companies all took their careers pages
+    down at once. Require at least 2 attempts so a single company's bad URL
+    doesn't get misread as a platform-wide break.
+    """
+    return sorted(
+        platform for platform, attempts in platform_attempts.items()
+        if attempts >= 2 and len(platform_failures.get(platform, ())) == attempts
+    )
+
+
 def sheets_write(fn, *args, **kwargs):
     """Call a gspread write method, retrying up to 3 times on 429 quota errors."""
     for attempt in range(3):

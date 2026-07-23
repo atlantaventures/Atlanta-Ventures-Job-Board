@@ -18,7 +18,7 @@ import anthropic
 import gspread
 from dotenv import find_dotenv, load_dotenv
 
-from core.utils import detect_platform
+from core.utils import detect_platform, compute_platform_wide_breaks
 from core.dedup import load_existing_keys, expire_deleted_companies, expire_removed_jobs
 from fetchers.ashby import scrape_ashby
 from fetchers.breezy import scrape_breezy
@@ -229,15 +229,7 @@ def main():
             if i < len(to_scrape):
                 time.sleep(DELAY_SECONDS)
 
-    # A platform where every attempted company failed this run is a much stronger
-    # signal than an isolated failure — almost always the ATS API/response shape
-    # changed, not that N unrelated companies all took their careers pages down at
-    # once. Require at least 2 attempts so a single company's bad URL doesn't get
-    # misread as a platform-wide break.
-    platform_wide_breaks = sorted(
-        platform for platform, attempts in platform_attempts.items()
-        if attempts >= 2 and len(platform_failures.get(platform, ())) == attempts
-    )
+    platform_wide_breaks = compute_platform_wide_breaks(platform_attempts, platform_failures)
     if platform_wide_breaks:
         print(f"  Platform-wide break suspected: {', '.join(platform_wide_breaks)}\n")
 

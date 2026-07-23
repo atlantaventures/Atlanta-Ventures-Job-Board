@@ -4,6 +4,17 @@ This file exists so that a fresh Claude session (Claude Tag in Slack, or Claude
 Code) can understand this system quickly without re-deriving it from scratch.
 Read this before touching anything.
 
+## Before running any Python in this repo
+
+Install dependencies first: `pip install -r requirements.txt`. The sandbox a
+session runs in does not have these preinstalled, so `import anthropic`,
+`import gspread`, `import flask`, etc. will fail with `ModuleNotFoundError`
+otherwise — that failure means "dependencies aren't installed," not "the repo
+is broken." Do this before running `test_failure_handling.py` or any fetcher
+directly. (`playwright install --with-deps chromium` is only needed if you're
+actually driving a real browser via `fetchers/web_scraper.py`'s `WebScraper`
+— not needed to run the test suite.)
+
 ## What this is
 
 A pipeline that scrapes job postings from portfolio companies' careers pages
@@ -113,7 +124,17 @@ missed job:**
 2. Make the minimal change that fixes the reported failure. Don't refactor
    surrounding code, add abstractions, or "improve" things not implicated
    in the failure.
-3. Open the PR against `dev`, not `main`.
-4. In the PR description, state plainly what broke and what the fix does —
+3. **Run `python3 test_failure_handling.py` before proposing anything.** It's
+   fast (well under a second, fully mocked, no network calls) and covers the
+   exact regression classes this repo is built to avoid — a fetcher silently
+   swallowing a shape change, the `skip_expiry` protection breaking, the
+   `platform_wide_breaks` math, and notify.py's Slack rendering. If your
+   change touches any of `fetchers/*.py`, `job_loader.py`, `notify.py`, or
+   `sync/wp_sync.py`, this test file already has a check for whether you just
+   broke the safety behavior. `test_production.py` is a broader smoke-test
+   suite that hits real vendor APIs — don't run that one automatically; it
+   costs real API calls and isn't meant for a quick per-fix check.
+4. Open the PR against `dev`, not `main`.
+5. In the PR description, state plainly what broke and what the fix does —
    the person merging may not read the diff, so the description is what
    they're actually relying on.
