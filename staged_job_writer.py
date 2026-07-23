@@ -13,7 +13,7 @@ import re
 import anthropic
 
 from core.normalize import normalize_function, normalize_location, VALID_FUNCTIONS, VALID_LOCATIONS
-from core.utils import sheets_write
+from core.utils import sheets_write, ScrapeShapeError
 from core.dedup import (
     is_generic_listing,
     job_key,
@@ -94,8 +94,13 @@ Return ONLY the JSON array, no explanation, no markdown."""
     try:
         verdicts = json.loads(text)
     except json.JSONDecodeError:
-        print(f"    Claude returned invalid JSON for relevance filter — keeping all {len(jobs)} jobs")
-        return jobs, []
+        # Previously this fell back to "keep all jobs unfiltered" and only printed a
+        # warning — meaning unfiltered (possibly irrelevant) jobs could get posted with
+        # no error counted anywhere. Raising instead makes this a real scrape failure:
+        # job_loader.py catches it per-company, counts it, and retries next run.
+        raise ScrapeShapeError(
+            f"Claude returned invalid JSON for relevance filter at {company}: {text[:200]!r}"
+        )
 
     if len(verdicts) != len(jobs):
         print(f"    WARNING: Claude returned {len(verdicts)} verdicts for {len(jobs)} jobs — adjusting")

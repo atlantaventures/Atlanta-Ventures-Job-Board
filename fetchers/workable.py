@@ -1,7 +1,7 @@
 import requests
 
 from core.normalize import normalize_function
-from core.utils import extract_slug
+from core.utils import extract_slug, expect_key
 
 _WORKPLACE_MAP = {
     "remote": "Remote",
@@ -33,9 +33,10 @@ def scrape_workable(url: str) -> list:
         if resp.status_code == 404:
             return []
         resp.raise_for_status()
-        data = resp.json()
+        data    = resp.json()
+        results = expect_key(data, "results", "Workable")
 
-        for j in data.get("results", []):
+        for j in results:
             title     = j.get("title", "")
             depts     = j.get("department") or []
             dept_name = depts[0].get("name", "") if depts and isinstance(depts[0], dict) else ""
@@ -51,7 +52,7 @@ def scrape_workable(url: str) -> list:
             })
 
         cursor = data.get("cursor")
-        if not cursor or not data.get("results"):
+        if not cursor or not results:
             break
 
     return jobs
