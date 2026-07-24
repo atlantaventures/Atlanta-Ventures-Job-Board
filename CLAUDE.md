@@ -148,6 +148,14 @@ for someone without repo access:
   Whoever updates it must also manually trigger a redeploy for each
   environment they changed, or the old value keeps running.
 
+Updating `ANTHROPIC_MODEL` resolves this the vast majority of the time — try
+that in full first. If the scraper is still failing after the model swap
+(especially if the new error looks like an authentication/permission problem
+rather than a model-not-found error), the API key itself may also need
+rotating. That's a separate, secondary step to fall back to, not the default
+fix — don't rotate the key on every model-deprecation alert as a matter of
+course.
+
 This is why this particular fix is "guide a human through Railway's
 dashboard" rather than "open a PR" — see the Slack channel's custom
 instructions for the plain-language walkthrough to give a non-technical
