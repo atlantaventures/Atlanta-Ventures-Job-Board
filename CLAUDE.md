@@ -104,9 +104,9 @@ this. Specifics:
   A bad fix here mostly fails back to "still not finding jobs from that
   company," which is roughly the starting state. Low blast radius.
 
-**High risk — propose a fix, but flag it for human review rather than
-merging solo. Getting these wrong can cause real data loss, not just a
-missed job:**
+**High risk — do NOT propose a fix or open a PR. Diagnose the problem, explain
+it in plain language, and say this one needs Aiden — then stop. Getting these
+wrong can cause real data loss, not just a missed job:**
 - `sync/wp_sync.py`, `sync/webhook.py` — anything that posts to or deletes
   from the live WordPress site (including the `/nuke` endpoint).
 - `core/dedup.py`, `staged_job_writer.py` — the expiry/dedup logic that
@@ -114,6 +114,14 @@ missed job:**
 - `.env`, `config/google_credentials.json`, or anything involving
   credentials or auth.
 - Anything that would change `job_loader.py`'s `skip_expiry` behavior.
+
+**Why no PR at all, not even "propose but flag":** whoever is maintaining
+this after Aiden leaves (Jacey — non-technical, no git/code background) will
+in practice approve a proposed PR regardless of whether she can evaluate the
+diff, because she has no way to evaluate it. "Propose a fix, flag for
+review" only works as a safety check if the reviewer can meaningfully say no.
+She can't, so the only real safety is not producing a PR for this category
+in the first place — surface the problem and stop.
 
 ## Common failure signatures → what they actually mean
 
@@ -146,6 +154,11 @@ instructions for the plain-language walkthrough to give a non-technical
 person.
 
 ## Workflow for a fix
+
+This workflow (through opening a PR) applies to **low-risk** fixes only. If
+step 1 shows the affected file(s) fall in the **high-risk** tier above, stop
+right there: explain the problem in plain language and say this one needs
+Aiden. Do not write a fix, and do not open a PR.
 
 1. Read the specific error and the file(s) it points to. Don't guess —
    fetch a live response from the vendor's API/page if you need to confirm
