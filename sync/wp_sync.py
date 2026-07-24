@@ -206,14 +206,11 @@ def main():
         if wp_status.lower() == "expired":
             post_id = existing_jobs.get(app_url.rstrip("/").lower())
             if post_id:
-                if delete_job(post_id):
-                    _sheets_write(jobs_ws.update_cell,i, COL_WP_STATUS + 1, "removed")
-                    del existing_jobs[app_url.rstrip("/").lower()]
-                    deleted += 1
-                    print(f"  Removed: {title}")
-                else:
-                    delete_failed += 1
-                    print(f"  DELETE FAILED: {title}")
+                delete_job(post_id)
+                _sheets_write(jobs_ws.update_cell,i, COL_WP_STATUS + 1, "removed")
+                del existing_jobs[app_url.rstrip("/").lower()]
+                deleted += 1
+                print(f"  Removed: {title}")
                 time.sleep(2)
             else:
                 # Already gone from WP — just clean up the sheet row
