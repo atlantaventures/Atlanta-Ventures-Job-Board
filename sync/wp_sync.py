@@ -156,7 +156,7 @@ def post_job(job: dict) -> bool:
 def main():
     gc = gspread.service_account(filename=str(CREDENTIALS_FILE))
     sh = gc.open_by_key(SHEET_ID)
-    companies_ws = sh.worksheet("Companies")
+    companies_ws = sh.worksheet("Companies ")
     jobs_ws      = sh.worksheet("Jobs")
 
     active_companies = {
@@ -206,11 +206,14 @@ def main():
         if wp_status.lower() == "expired":
             post_id = existing_jobs.get(app_url.rstrip("/").lower())
             if post_id:
-                delete_job(post_id)
-                _sheets_write(jobs_ws.update_cell,i, COL_WP_STATUS + 1, "removed")
-                del existing_jobs[app_url.rstrip("/").lower()]
-                deleted += 1
-                print(f"  Removed: {title}")
+                if delete_job(post_id):
+                    _sheets_write(jobs_ws.update_cell,i, COL_WP_STATUS + 1, "removed")
+                    del existing_jobs[app_url.rstrip("/").lower()]
+                    deleted += 1
+                    print(f"  Removed: {title}")
+                else:
+                    delete_failed += 1
+                    print(f"  DELETE FAILED: {title}")
                 time.sleep(2)
             else:
                 # Already gone from WP — just clean up the sheet row
