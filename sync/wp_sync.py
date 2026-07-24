@@ -156,7 +156,7 @@ def post_job(job: dict) -> bool:
 def main():
     gc = gspread.service_account(filename=str(CREDENTIALS_FILE))
     sh = gc.open_by_key(SHEET_ID)
-    companies_ws = sh.worksheet("Companies ")
+    companies_ws = sh.worksheet("Companies")
     jobs_ws      = sh.worksheet("Jobs")
 
     active_companies = {
