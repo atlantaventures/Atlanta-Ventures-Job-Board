@@ -26,6 +26,6 @@ def scrape_greenhouse(url: str) -> list:
             "application_url": j.get("absolute_url", ""),
             "job_function":    fn,
             "is_evergreen":    False,
-            "job_location":    normalize_location(j["location"]["name"]),
+            "job_location":    normalize_location((j.get("location") or {}).get("name", "")),
         })
     return jobs
