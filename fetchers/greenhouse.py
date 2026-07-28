@@ -16,15 +16,15 @@ def scrape_greenhouse(url: str) -> list:
         return []
     resp.raise_for_status()
     jobs = []
-    for j in expect_key(resp.json(), "jobs", "Greenhouse"):
+    for j in expect_key(resp.json(), "postings", "Greenhouse"):
         title = j.get("title", "")
-        dept  = j.get("departments", [{}])[0].get("name", "") if j.get("departments") else ""
+        dept  = j.get("departments")[0].get("name", "")
         fn    = normalize_function(dept) or normalize_function(title)
         jobs.append({
             "job_title":       title,
             "application_url": j.get("absolute_url", ""),
             "job_function":    fn,
             "is_evergreen":    False,
-            "job_location":    normalize_location((j.get("location") or {}).get("name", "")),
+            "job_location":    normalize_location(j["location"]["name"]),
         })
     return jobs
