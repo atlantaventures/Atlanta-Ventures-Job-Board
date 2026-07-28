@@ -56,6 +56,7 @@ def main():
     removed_jobs     = stats.get("removed_jobs", [])
     updated_jobs     = stats.get("updated_jobs", [])
     failed_companies = stats.get("failed_companies", [])
+    no_job_companies = stats.get("no_job_companies", [])
 
     # Plain-text version for Railway logs
     print(f"Job Board Run — {date}")
@@ -69,6 +70,7 @@ def main():
         date, errors, wp_post_failed, wp_delete_failed, all_ok, companies, filtered_out,
         added_jobs, removed_jobs, updated_jobs, failed_companies,
         platform_wide_breaks, platform_failures, wp_crashed, wp_crash_error,
+        no_job_companies,
     ))
 
 
@@ -110,11 +112,12 @@ def _job_list_text(jobs: list, cap: int = _MAX_JOB_LINES) -> str:
     return "\n".join(lines)
 
 
-def _summary_blocks(date, errors, wp_post_failed, wp_delete_failed, all_ok, companies=0, filtered_out=0, added_jobs=None, removed_jobs=None, updated_jobs=None, failed_companies=None, platform_wide_breaks=None, platform_failures=None, wp_crashed=False, wp_crash_error=""):
+def _summary_blocks(date, errors, wp_post_failed, wp_delete_failed, all_ok, companies=0, filtered_out=0, added_jobs=None, removed_jobs=None, updated_jobs=None, failed_companies=None, platform_wide_breaks=None, platform_failures=None, wp_crashed=False, wp_crash_error="", no_job_companies=None):
     added_jobs       = added_jobs       or []
     removed_jobs     = removed_jobs     or []
     updated_jobs     = updated_jobs     or []
     failed_companies = failed_companies or []
+    no_job_companies = no_job_companies or []
     platform_wide_breaks = platform_wide_breaks or []
     platform_failures    = platform_failures    or {}
 
@@ -238,7 +241,9 @@ def _summary_blocks(date, errors, wp_post_failed, wp_delete_failed, all_ok, comp
                 "type": "mrkdwn",
                 "text": (
                     f"*Jobs Removed*\n"
-                    f"_These jobs no longer appeared on the company's careers page and were automatically removed._\n"
+                    f"_Either the job no longer appears on the company's careers page, or the "
+                    f"company's row was removed from the Companies tab / had its Careers URL "
+                    f"cleared. If you didn't expect these, check the Companies tab first._\n"
                     f"{_job_list_text(removed_jobs)}"
                 ),
             },
@@ -260,6 +265,32 @@ def _summary_blocks(date, errors, wp_post_failed, wp_delete_failed, all_ok, comp
             "text": {
                 "type": "mrkdwn",
                 "text": f"_{filtered_out} job{'s' if filtered_out != 1 else ''} found but filtered as not relevant to this board._",
+            },
+        })
+
+    # ── Companies that returned nothing ───────────────────────────────────────
+    # Informational, not an error tier: a company with no openings legitimately returns nothing,
+    # so this must not change the verdict or it would fire every week and get tuned out. It's here
+    # because this is the one failure the summary was otherwise blind to — every fetcher returns []
+    # on a 404, so a company whose ATS slug went stale looks exactly like a company that isn't
+    # hiring, and it produces no added_jobs and no removed_jobs to notice it by. The signal is
+    # repetition: the same name here week after week means go check its Careers URL.
+    if no_job_companies:
+        n = len(no_job_companies)
+        blocks.append({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": (
+                    f"*{n} compan{'ies' if n != 1 else 'y'} returned no jobs*\n"
+                    f"_Normal if they aren't hiring. But if the same company shows up here every "
+                    f"week, its Careers URL is probably stale — a moved or renamed job board looks "
+                    f"identical to an empty one. Cross-check the *Last Scraped* date in the "
+                    f"Companies tab: it only updates when a scrape actually finds jobs, so a date "
+                    f"frozen weeks in the past is the tell._\n"
+                    + "\n".join(f"• {c}" for c in no_job_companies[:_MAX_JOB_LINES])
+                    + (f"\n_… and {n - _MAX_JOB_LINES} more_" if n > _MAX_JOB_LINES else "")
+                ),
             },
         })
 

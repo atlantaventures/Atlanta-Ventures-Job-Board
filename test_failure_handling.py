@@ -15,6 +15,9 @@ the files this suite covers.
   Section 3 — platform_wide_breaks   (pure logic)
   Section 4 — notify.py Slack blocks (pure logic)
   Section 5 — wp_sync pagination     (mocked HTTP)
+  Section 6 — detect_platform routing (pure logic)
+  Section 7 — no_job_companies reporting (pure logic)
+  Section 8 — parse_flexible_date         (pure logic)
 """
 
 import json
@@ -385,6 +388,284 @@ def _t():
         except RuntimeError:
             pass
 test("wp_sync: a different 400 code raises instead of silently stopping", _t)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+section("Section 6 — detect_platform routing + slug extraction (pure logic)")
+# ═══════════════════════════════════════════════════════════════════════════
+# Added after a real incident: commit 1f0817b (an unrelated change that added
+# sheets_write) also flipped `if "workable.com" in url` to `if "aft" in url` in
+# core/utils.detect_platform. Nothing caught it. The effects were both silent:
+#   - every Workable URL fell through to "custom" (Playwright + a paid Claude
+#     extraction call) and fetchers/workable.py became unreachable dead code;
+#   - any URL merely CONTAINING "aft" (careers.draftkings.com,
+#     aftership.recruitee.com) was misrouted to Workable, failed slug
+#     extraction, and returned [] with no error counted anywhere.
+# A misrouted company reports zero jobs, which job_loader.py counts as
+# fail_count — NOT error_count — so Slack still renders a green success. Keep
+# this section exhaustive: routing bugs do not announce themselves.
+
+from core.utils import detect_platform
+from fetchers.workable import scrape_workable
+
+_ROUTING_CASES = [
+    # (url, expected platform)
+    ("https://boards.greenhouse.io/acme",            "greenhouse"),
+    ("https://job-boards.greenhouse.io/acme",        "greenhouse"),
+    ("https://jobs.lever.co/acme",                   "lever"),
+    ("https://jobs.ashbyhq.com/acme",                "ashby"),
+    ("https://apply.workable.com/acme/",             "workable"),
+    ("https://acme.workable.com/",                   "workable"),
+    ("https://apply.workable.com/acme/j/ABC123/",    "workable"),
+    ("https://careers.smartrecruiters.com/acme",     "smartrecruiters"),
+    ("https://acme.breezy.hr/",                      "breezy"),
+    ("https://acme.recruitee.com/",                  "recruitee"),
+    ("https://docs.google.com/document/d/xyz/edit",  "googledoc"),
+    ("https://www.linkedin.com/jobs/view/123",       "linkedin"),
+    ("https://drive.google.com/file/d/xyz/view",     "pdf"),
+    ("https://acme.com/careers/openings.pdf",        "pdf"),
+    ("https://acme.com/careers",                     "custom"),
+]
+
+for _url, _want in _ROUTING_CASES:
+    def _t(url=_url, want=_want):
+        got = detect_platform(url)
+        assert got == want, f"{url} routed to {got!r}, expected {want!r}"
+    test(f"detect_platform: {_url} -> {_want}", _t)
+
+# The specific regression: substrings must never decide routing. Each of these
+# contains "aft" and must route on its real domain, not on Workable.
+_AFT_TRAPS = [
+    ("https://careers.draftkings.com/",     "custom"),
+    ("https://aftership.recruitee.com/",    "recruitee"),
+    ("https://acme.com/aftermarket-jobs",   "custom"),
+    ("https://boards.greenhouse.io/draft",  "greenhouse"),
+]
+for _url, _want in _AFT_TRAPS:
+    def _t(url=_url, want=_want):
+        got = detect_platform(url)
+        assert got == want, (
+            f'{url} routed to {got!r} instead of {want!r} — a substring is '
+            f"deciding routing again (see commit 1f0817b)"
+        )
+    test(f"detect_platform: 'aft' substring does not hijack {_url}", _t)
+
+def _t():
+    assert detect_platform("https://apply.workable.com/acme/") == "workable", (
+        "Workable routing is broken, so fetchers/workable.py is unreachable and "
+        "every Workable company is silently paying for Claude extraction instead"
+    )
+test("detect_platform: fetchers/workable.py is actually reachable", _t)
+
+# Slug extraction for Workable. The subdomain pattern was `([^.]+)\.workable\.com`,
+# which greedily captured the scheme too ('https://acme'), producing a 404 and a
+# silent []. Latent while routing was broken; live again once it was fixed.
+_SLUG_CASES = [
+    ("https://apply.workable.com/acme/",           "acme"),
+    ("https://apply.workable.com/acme/j/XYZ/",     "acme"),
+    ("https://apply.workable.com/acme?utm=x",      "acme"),
+    ("https://acme.workable.com/",                 "acme"),
+    ("http://acme.workable.com",                   "acme"),
+    ("acme.workable.com",                          "acme"),
+    ("https://acme.workable.com/j/ABC?src=x",      "acme"),
+]
+for _url, _want in _SLUG_CASES:
+    def _t(url=_url, want=_want):
+        captured = {}
+        def _fake_post(u, **kw):
+            captured["url"] = u
+            return fake_response(200, {"results": [], "cursor": None})
+        with patch("fetchers.workable.requests.post", side_effect=_fake_post):
+            scrape_workable(url)
+        assert "url" in captured, f"{url} produced no slug, so no request was made"
+        expected = f"https://apply.workable.com/api/v3/accounts/{want}/jobs"
+        assert captured["url"] == expected, (
+            f"{url} -> requested {captured['url']!r}, expected slug {want!r}"
+        )
+    test(f"scrape_workable slug: {_url} -> {_want}", _t)
+
+# Non-account Workable URLs must yield no slug and make zero HTTP calls,
+# rather than requesting a garbage account like 'www' or 'pply'.
+for _url in ["https://apply.workable.com/", "https://www.workable.com/", "https://workable.com/"]:
+    def _t(url=_url):
+        with patch("fetchers.workable.requests.post") as mock_post:
+            assert scrape_workable(url) == []
+            assert not mock_post.called, (
+                f"{url} has no account slug but still called the API with "
+                f"{mock_post.call_args}"
+            )
+    test(f"scrape_workable: no bogus slug for {_url}", _t)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+section("Section 7 — no_job_companies reporting (pure logic)")
+# ═══════════════════════════════════════════════════════════════════════════
+# A company whose ATS slug goes stale returns [] — same as a company that simply isn't hiring,
+# because every fetcher returns [] on a 404. job_loader.py counts that as fail_count, which never
+# reaches error_count/failed_companies, so scraper_ok stays True and Slack renders a green
+# success. And since such a company adds no jobs and removes none, added_jobs/removed_jobs don't
+# reveal it either. It disappears from the board permanently, invisibly.
+#
+# The fix is reporting, not classification: list the names and let repetition be the signal. These
+# tests pin the part that matters — that surfacing them does NOT promote the run to an error tier,
+# because a company with no openings is a normal, weekly occurrence.
+
+import notify as _notify
+
+def _t():
+    blocks = _notify._summary_blocks(
+        "2026-07-28", 0, 0, 0, True, companies=5,
+        no_job_companies=["Acme", "Nimbus"],
+    )
+    text = json.dumps(blocks)
+    assert "2 companies returned no jobs" in text, "the count line is missing"
+    assert "Acme" in text and "Nimbus" in text, "company names are missing"
+test("no_job_companies renders a section listing each company", _t)
+
+def _t():
+    blocks = _notify._summary_blocks(
+        "2026-07-28", 0, 0, 0, True, companies=5,
+        no_job_companies=["Acme"],
+    )
+    text = json.dumps(blocks)
+    assert "1 company returned no jobs" in text, "singular grammar is wrong"
+test("no_job_companies uses singular grammar for one company", _t)
+
+def _t():
+    blocks = _notify._summary_blocks(
+        "2026-07-28", 0, 0, 0, True, companies=5,
+        no_job_companies=["Acme", "Nimbus"],
+    )
+    text = json.dumps(blocks)
+    assert ":white_check_mark:" in text, (
+        "a company returning no jobs must NOT change the verdict tier — not hiring is normal, and "
+        "alerting on it weekly would train everyone to ignore this message"
+    )
+    assert "rotating_light" not in text and "<!channel>" not in text, "must not escalate or ping"
+test("no_job_companies does not downgrade an otherwise-clean run", _t)
+
+def _t():
+    blocks = _notify._summary_blocks(
+        "2026-07-28", 0, 0, 0, True, companies=5,
+        no_job_companies=["Acme"],
+    )
+    text = json.dumps(blocks)
+    assert "Last Scraped" in text, (
+        "the section must point at the Companies tab's Last Scraped column — it's the only way to "
+        "tell a stale URL from a company that isn't hiring"
+    )
+test("no_job_companies explains how to tell stale from empty", _t)
+
+def _t():
+    blocks = _notify._summary_blocks("2026-07-28", 0, 0, 0, True, companies=5, no_job_companies=[])
+    assert "returned no jobs" not in json.dumps(blocks), "must render nothing when the list is empty"
+test("no_job_companies section absent when every company returned jobs", _t)
+
+def _t():
+    many = [f"Company{i}" for i in range(45)]
+    text = json.dumps(_notify._summary_blocks(
+        "2026-07-28", 0, 0, 0, True, companies=50, no_job_companies=many,
+    ))
+    assert "45 companies returned no jobs" in text, "the total must still be the real total"
+    assert "and 15 more" in text, "the list must be capped with an overflow note"
+    assert "Company44" not in text, "entries past the cap must not be rendered"
+test("no_job_companies caps a long list but reports the true total", _t)
+
+def _t():
+    # back-compat: notify.py is called positionally from _post_slack_blocks in main()
+    blocks = _notify._summary_blocks("2026-07-28", 0, 0, 0, True)
+    assert isinstance(blocks, list) and blocks, "must still work with only the required args"
+    assert "returned no jobs" not in json.dumps(blocks)
+test("no_job_companies is optional (back-compat with existing callers)", _t)
+
+def _t():
+    text = json.dumps(_notify._summary_blocks(
+        "2026-07-28", 0, 0, 0, True, companies=5,
+        removed_jobs=[{"company": "Acme", "title": "Engineer"}],
+    ))
+    assert "Companies tab" in text, (
+        "the Jobs Removed blurb must name the Companies tab — removals are just as often caused by "
+        "editing that sheet as by a company taking a posting down, and the old wording only "
+        "mentioned the careers page"
+    )
+test("Jobs Removed blurb names sheet edits as a possible cause", _t)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+section("Section 8 — parse_flexible_date (pure logic)")
+# ═══════════════════════════════════════════════════════════════════════════
+# remind.py used a strict strptime on "%Y-%m-%d" and swallowed ValueError with a bare `continue`.
+# Everything the code writes is ISO, but the Jobs tab is hand-edited and Google Sheets happily
+# reformats a date-typed cell — so a row reading "7/28/2026" was skipped silently, forever: never
+# reminded on, never auto-expired, just sitting on the board with nobody prompted. A formatting
+# difference should never decide whether a row gets processed.
+
+from datetime import date as _date, datetime as _datetime
+from core.utils import parse_flexible_date
+
+_EXPECTED = _date(2026, 7, 28)
+_PARSE_CASES = [
+    ("2026-07-28",            "ISO — what the code itself writes"),
+    ("2026/07/28",            "ISO with slashes"),
+    ("07/28/2026",            "US padded"),
+    ("7/28/2026",             "US unpadded — the common Sheets reformat"),
+    ("07-28-2026",            "US with dashes"),
+    ("7/28/26",               "US two-digit year"),
+    ("Jul 28, 2026",          "abbreviated month name"),
+    ("July 28, 2026",         "full month name"),
+    ("Jul 28 2026",           "month name, no comma"),
+    ("28 Jul 2026",           "day-first with month name"),
+    ("28 July 2026",          "day-first, full month name"),
+    ("28/07/2026",            "day-first numeric (month 28 is invalid, so falls through)"),
+    ("2026-07-28 10:30:00",   "ISO with a time component"),
+    ("2026-07-28T10:30:00",   "ISO 8601 with T separator"),
+    ("7/28/2026 3:04 PM",     "US with a time component"),
+    ("  2026-07-28  ",        "surrounding whitespace"),
+]
+for _raw, _why in _PARSE_CASES:
+    def _t(raw=_raw, why=_why):
+        got = parse_flexible_date(raw)
+        assert got == _EXPECTED, f"{raw!r} ({why}) parsed as {got!r}, expected {_EXPECTED!r}"
+    test(f"parses {_raw!r} — {_why}", _t)
+
+def _t():
+    # Ambiguous by nature; US wins because that's how this sheet is typed.
+    assert parse_flexible_date("7/8/2026") == _date(2026, 7, 8), "ambiguous D/M vs M/D must resolve US-first"
+test("parses ambiguous '7/8/2026' as US (July 8), matching sheet convention", _t)
+
+def _t():
+    assert parse_flexible_date("") is None
+    assert parse_flexible_date("   ") is None
+    assert parse_flexible_date(None) is None
+test("blank/None return None (a missing date is not an error)", _t)
+
+for _junk in ["not a date", "TBD", "n/a", "-", "2026", "13/13/2026", "0000-00-00"]:
+    def _t(junk=_junk):
+        assert parse_flexible_date(junk) is None, f"{junk!r} should be unparseable, not silently wrong"
+    test(f"returns None for genuinely unreadable {_junk!r}", _t)
+
+def _t():
+    # Never raises — the whole point is that callers get None instead of an exception to swallow.
+    for value in ["", None, "garbage", 12345, [], {}, "2026-07-28"]:
+        try:
+            parse_flexible_date(value)
+        except Exception as e:
+            assert False, f"parse_flexible_date({value!r}) raised {type(e).__name__}: {e}"
+test("never raises, for any input type", _t)
+
+def _t():
+    assert parse_flexible_date(_date(2026, 7, 28)) == _EXPECTED, "a real date object should pass through"
+    assert parse_flexible_date(_datetime(2026, 7, 28, 10, 30)) == _EXPECTED, "a datetime should narrow to its date"
+test("accepts date/datetime objects directly (gspread can return them)", _t)
+
+def _t():
+    # The bug this section exists for: US-formatted dates used to be dropped entirely.
+    from datetime import timedelta as _td
+    old_us = (_date.today() - _td(days=45)).strftime("%m/%d/%Y")
+    parsed = parse_flexible_date(old_us)
+    assert parsed is not None, f"{old_us!r} must parse, or the row silently never expires"
+    assert (_date.today() - parsed).days == 45, f"parsed to {parsed!r}, age is wrong"
+test("a 45-day-old US-formatted date now yields a correct age (was: skipped forever)", _t)
 
 
 # ═══════════════════════════════════════════════════════════════════════════

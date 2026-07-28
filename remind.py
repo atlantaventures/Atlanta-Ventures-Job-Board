@@ -1,5 +1,6 @@
 """
-Runs daily after the main scraper pipeline (piggybacked on run.sh).
+Runs weekly after the main scraper pipeline (piggybacked on run.sh — the Railway cron that
+triggers it is weekly, see cron.sh).
 
 Two jobs:
   1. AUTO-EXPIRE: WP Status == "manual-auto" and Scraped At + 30 days <= today
@@ -14,6 +15,8 @@ from pathlib import Path
 
 import gspread
 from dotenv import find_dotenv, load_dotenv
+
+from core.utils import parse_flexible_date
 
 load_dotenv(find_dotenv())
 
@@ -108,6 +111,7 @@ def main():
 
     to_expire = []
     to_remind = []
+    unreadable_dates = []   # rows whose date cell is present but unparseable
 
     for i, row in enumerate(all_rows[1:], start=2):
         if len(row) <= COL_WP_STATUS:
@@ -117,9 +121,16 @@ def main():
             continue
 
         raw_date = row[COL_DATE].strip() if len(row) > COL_DATE else ""
-        try:
-            added = datetime.strptime(raw_date, "%Y-%m-%d").date()
-        except ValueError:
+        added    = parse_flexible_date(raw_date)
+        if added is None:
+            # A blank date is normal enough to pass over quietly, but a value that's present and
+            # unreadable is worth saying out loud: this row will never be reminded on and never
+            # auto-expire, so it would otherwise sit on the board forever with nobody prompted.
+            if raw_date:
+                unreadable_dates.append(
+                    {"company": row[COL_COMPANY].strip(), "row": i, "raw": raw_date}
+                )
+                print(f"remind.py: row {i} has an unreadable date {raw_date!r} — skipping")
             continue
 
         job = {
@@ -127,7 +138,7 @@ def main():
             "title":   row[COL_TITLE].strip(),
             "url":     row[COL_URL].strip() if len(row) > COL_URL else "",
             "row":     i,
-            "added":   raw_date,
+            "added":   added.isoformat(),
         }
 
         if wp_status == "manual-auto" and added < expire_cutoff:
@@ -197,7 +208,39 @@ def main():
             },
         ])
 
-    if not expired and not to_remind:
+    # ── Unreadable dates ──────────────────────────────────────────────────────
+    # Not an error tier and no @channel: nothing is broken, but these rows are stuck — they'll
+    # never be reminded on and never auto-expire until the date cell is fixed, and previously the
+    # only trace was a swallowed ValueError. Parsing is permissive (see parse_flexible_date), so
+    # anything reaching here really is unreadable rather than merely differently formatted.
+    if unreadable_dates:
+        n = len(unreadable_dates)
+        lines = "\n".join(
+            f"• *{u['company']}* — Row {u['row']}, date reads `{u['raw']}`"
+            for u in unreadable_dates
+        )
+        _post_slack([
+            {
+                "type": "header",
+                "text": {"type": "plain_text", "text": "Job Board — Unreadable Dates"},
+            },
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": (
+                        f":calendar: *{n} manually-added job{'s' if n != 1 else ''} "
+                        f"{'have' if n != 1 else 'has'} a date that can't be read*, so "
+                        f"{'they' if n != 1 else 'it'} won't be auto-expired or flagged for review "
+                        f"until fixed.\n{lines}\n\n"
+                        f"_Fix: set the Scraped At cell to a normal date, e.g. "
+                        f"`{date.today().isoformat()}` or `{date.today().strftime('%m/%d/%Y')}`._"
+                    ),
+                },
+            },
+        ])
+
+    if not expired and not to_remind and not unreadable_dates:
         print("remind.py: nothing to expire or remind")
 
 

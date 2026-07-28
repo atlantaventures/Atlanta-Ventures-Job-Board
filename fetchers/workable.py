@@ -13,7 +13,7 @@ _WORKPLACE_MAP = {
 def scrape_workable(url: str) -> list:
     slug = (
         extract_slug(r"apply\.workable\.com/([^/?#]+)", url)
-        or extract_slug(r"([^.]+)\.workable\.com", url)
+        or extract_slug(r"(?:^|//)(?!(?:apply|www)\.)([^./]+)\.workable\.com", url)
     )
     if not slug:
         return []

@@ -34,7 +34,15 @@ from staged_job_writer import process_company_jobs, process_evergreen_company
 
 load_dotenv(find_dotenv())
 
-_REQUIRED_VARS = ["ANTHROPIC_API_KEY", "SHEET_ID"]
+# ANTHROPIC_MODEL belongs here even though it's only read further down the call stack
+# (staged_job_writer.py, fetchers/web_scraper.py, fetchers/pdf_loader.py) as a bare
+# os.environ["ANTHROPIC_MODEL"]. Left out, a blank or misspelled value in Railway raised KeyError
+# once per company instead of failing here — and because _is_model_error() only matches
+# anthropic.NotFoundError/BadRequestError, model_error stayed False while every platform tripped
+# compute_platform_wide_breaks(). The result was a Slack alert reading "Likely API Change — Every
+# Company On A Platform Failed" pointing the reader at fetchers/*.py: right symptom, wrong file,
+# for what is probably the most likely maintenance event in this repo's future.
+_REQUIRED_VARS = ["ANTHROPIC_API_KEY", "SHEET_ID", "ANTHROPIC_MODEL"]
 _missing = [v for v in _REQUIRED_VARS if not os.environ.get(v)]
 if _missing:
     print(f"ERROR: Missing required environment variables: {', '.join(_missing)}")
@@ -94,6 +102,7 @@ def main():
     removed_jobs     = deleted_expired  # pre-seeded with deleted-company jobs
     updated_jobs     = []              # [{"company": str, "old_title": str, "new_title": str}, ...]
     failed_companies = []              # company names that threw an exception
+    no_job_companies = []              # company names whose fetch succeeded but returned nothing
     platform_attempts = defaultdict(int)   # platform -> URLs attempted this run
     platform_failures = defaultdict(set)   # platform -> companies whose fetch raised
 
@@ -182,8 +191,18 @@ def main():
                             model_error = True
 
                 if not all_jobs:
+                    # Deliberately NOT counted as an error: a company with no current openings
+                    # genuinely returns nothing, and treating that as a failure would cry wolf
+                    # every week. But it's also indistinguishable from a stale ATS slug — every
+                    # fetcher returns [] on a 404 — and that case is otherwise completely silent,
+                    # because a company that had no jobs last run and none this run produces no
+                    # added_jobs and no removed_jobs either. Collect the names so notify.py can
+                    # list them: the signal a human can read is the SAME company appearing here
+                    # week after week. Cross-check against "Last Scraped" in Companies column D,
+                    # which only advances on a successful non-empty scrape.
                     print(f"    No jobs found\n")
                     fail_count += 1
+                    no_job_companies.append(company)
                     continue
 
                 stats = process_company_jobs(
@@ -260,6 +279,7 @@ def main():
         "removed_jobs":       removed_jobs,
         "updated_jobs":       updated_jobs,
         "failed_companies":   failed_companies,
+        "no_job_companies":   no_job_companies,
         "platform_wide_breaks": platform_wide_breaks,
         "platform_failures":  {p: sorted(c) for p, c in platform_failures.items() if c},
     }))

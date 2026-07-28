@@ -1,7 +1,77 @@
 import re
 import time
+from datetime import date, datetime
 
 import gspread
+
+
+# Everything this repo writes uses date.today().isoformat() (job_loader.py:71), so the automated
+# path is always "2026-07-28". These other formats exist because the Jobs tab is hand-edited: a
+# person types "7/28/2026", or Google Sheets silently reformats an ISO string it decided was a
+# date-typed cell. Ordered US-first (MM/DD) — that's the convention in this sheet. A day-first
+# value like "28/07/2026" still parses, because MM/DD fails on month 28 and the fallback catches
+# it; genuinely ambiguous values like "7/8/2026" resolve as US, same as everyone typing them means.
+_DATE_FORMATS = (
+    "%Y-%m-%d",
+    "%Y/%m/%d",
+    "%m/%d/%Y",
+    "%m-%d-%Y",
+    "%m/%d/%y",
+    "%b %d, %Y",
+    "%B %d, %Y",
+    "%b %d %Y",
+    "%B %d %Y",
+    "%d %b %Y",
+    "%d %B %Y",
+)
+
+# Tried only after the US-first set above has failed outright.
+_DAY_FIRST_FORMATS = ("%d/%m/%Y", "%d-%m-%Y", "%d/%m/%y")
+
+
+def parse_flexible_date(raw) -> "date | None":
+    """Best-effort parse of a date out of a spreadsheet cell. Returns None if there isn't one.
+
+    Deliberately permissive. The alternative — a strict strptime on one format — meant a cell
+    reading "7/28/2026" instead of "2026-07-28" raised ValueError, got swallowed by a bare
+    `except: continue`, and that row was then skipped silently forever. A trivial formatting
+    difference should never decide whether a row gets processed.
+
+    Returns None (rather than raising) for blank and genuinely unparseable values, so callers can
+    tell "no date here" from "a date I couldn't read" and log accordingly.
+    """
+    if raw is None:
+        return None
+    if isinstance(raw, datetime):
+        return raw.date()
+    if isinstance(raw, date):
+        return raw
+
+    text = str(raw).strip()
+    if not text:
+        return None
+
+    # A trailing time component ("2026-07-28 10:00:00", "7/28/2026 3:04 PM") is irrelevant here,
+    # so try the date part on its own as well as the whole string.
+    candidates = [text]
+    if " " in text:
+        head, tail = text.split(" ", 1)
+        if ":" in tail:
+            candidates.append(head)
+    if "T" in text:
+        candidates.append(text.split("T", 1)[0])
+
+    for candidate in candidates:
+        try:
+            return datetime.fromisoformat(candidate).date()
+        except ValueError:
+            pass
+        for fmt in _DATE_FORMATS + _DAY_FIRST_FORMATS:
+            try:
+                return datetime.strptime(candidate, fmt).date()
+            except ValueError:
+                continue
+    return None
 
 
 class ScrapeShapeError(Exception):
@@ -69,7 +139,7 @@ def detect_platform(url: str) -> str:
         return "lever"
     if "ashbyhq.com" in url:
         return "ashby"
-    if "aft" in url:
+    if "workable.com" in url:
         return "workable"
     if "smartrecruiters.com" in url:
         return "smartrecruiters"
