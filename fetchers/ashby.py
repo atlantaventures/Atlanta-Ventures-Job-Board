@@ -23,16 +23,16 @@ def scrape_ashby(url: str) -> list:
         return []
     resp.raise_for_status()
     jobs = []
-    for j in expect_key(resp.json(), "jobs", "Ashby"):
+    for j in expect_key(resp.json(), "postings", "Ashby"):
         title    = j.get("title", "")
         team     = j.get("team", "")
         dept     = j.get("department", "")
         fn       = normalize_function(team) or normalize_function(dept) or normalize_function(title)
-        wt       = (j.get("workplaceType") or "").lower()
+        wt       = j["workplaceType"].lower()
         location = _WORKPLACE_MAP.get(wt, "In Person")
         jobs.append({
             "job_title":       title,
-            "application_url": j.get("jobUrl", url),
+            "application_url": j["jobUrl"],
             "job_function":    fn,
             "is_evergreen":    False,
             "job_location":    location,
