@@ -9,16 +9,17 @@ def scrape_greenhouse(url: str) -> list:
     if not slug:
         return []
     resp = requests.get(
-        f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs",
+        f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs?content=true",
         timeout=10,
     )
     if resp.status_code == 404:
         return []
     resp.raise_for_status()
     jobs = []
-    for j in expect_key(resp.json(), "postings", "Greenhouse"):
+    for j in expect_key(resp.json(), "jobs", "Greenhouse"):
         title = j.get("title", "")
-        dept  = j.get("departments")[0].get("name", "")
+        departments = j.get("departments") or []
+        dept  = departments[0].get("name", "") if departments else ""
         fn    = normalize_function(dept) or normalize_function(title)
         jobs.append({
             "job_title":       title,
