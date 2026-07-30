@@ -1,7 +1,7 @@
 import requests
 
 from core.normalize import normalize_function, normalize_location
-from core.utils import extract_slug, expect_list
+from core.utils import extract_slug, expect_key
 
 
 def scrape_greenhouse(url: str) -> list:
@@ -16,7 +16,7 @@ def scrape_greenhouse(url: str) -> list:
         return []
     resp.raise_for_status()
     jobs = []
-    for j in expect_list(resp.json(), "Greenhouse"):
+    for j in expect_key(resp.json(), "jobs", "Greenhouse"):
         title = j.get("title", "")
         departments = j.get("departments") or []
         dept  = departments[0].get("name", "") if departments else ""
