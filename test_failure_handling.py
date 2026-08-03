@@ -669,6 +669,118 @@ test("a 45-day-old US-formatted date now yields a correct age (was: skipped fore
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+section("Section 9 — /run lock is atomic under concurrent requests")
+# ═══════════════════════════════════════════════════════════════════════════
+# 2026-08-03 incident: gunicorn ran two worker processes, and the lock at
+# sync/webhook.py's /run endpoint used to be check-then-act (`if path.exists():
+# ... path.touch()`), not atomic. Two /run requests landing close together and
+# routed to different workers could both pass the check before either created
+# the file, so both started run.sh — two full pipeline runs hit the same live
+# Google Sheet and WordPress site concurrently, publishing duplicate job posts
+# and racing each other on expiry deletes. Fixed by acquiring the lock with a
+# single atomic syscall (os.open with O_CREAT | O_EXCL) instead.
+
+import threading as _threading
+import tempfile as _tempfile
+import concurrent.futures as concurrent_futures
+from pathlib import Path as _Path
+
+def _old_buggy_acquire(lock_path, barrier):
+    """The exact pre-fix pattern, kept only to prove this test would have
+    caught the incident. A barrier forces every thread to pass the "does the
+    lock exist" check before any of them can create it — the worst case the
+    real bug allowed, made deterministic instead of relying on race timing."""
+    barrier.wait()
+    if lock_path.exists():
+        return False
+    lock_path.touch()
+    return True
+
+def _t():
+    N = 25
+    lock = _Path(_tempfile.mktemp())
+    barrier = _threading.Barrier(N)
+    with concurrent_futures.ThreadPoolExecutor(max_workers=N) as ex:
+        results = list(ex.map(lambda _: _old_buggy_acquire(lock, barrier), range(N)))
+    lock.unlink(missing_ok=True)
+    acquired = sum(results)
+    assert acquired > 1, (
+        f"control case: expected the old check-then-touch pattern to let multiple "
+        f"threads acquire the lock at once (that's the actual incident), got {acquired}"
+    )
+test("control case: pre-fix check-then-touch pattern double-acquires under a forced race (proves this test is sensitive to the bug)", _t)
+
+def _t():
+    N = 25
+    lock = _Path(_tempfile.mktemp())
+    lock.unlink(missing_ok=True)  # mktemp only reserves a name, doesn't create it
+    barrier = _threading.Barrier(N)
+
+    def _atomic_acquire():
+        barrier.wait()
+        try:
+            fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.close(fd)
+            return True
+        except FileExistsError:
+            return False
+
+    with concurrent_futures.ThreadPoolExecutor(max_workers=N) as ex:
+        results = list(ex.map(lambda _: _atomic_acquire(), range(N)))
+    lock.unlink(missing_ok=True)
+    acquired = sum(results)
+    assert acquired == 1, f"atomic os.open(O_EXCL) must let exactly one thread acquire, got {acquired}"
+test("os.open(O_CREAT | O_EXCL) lets exactly one thread acquire under the same forced race", _t)
+
+def _t():
+    """Exercises the actual shipped /run route (not a reimplementation) under
+    real concurrent load. subprocess.run and Slack posting are stubbed out so
+    no real scrape or Slack message ever fires during this test.
+
+    This confirms current behavior, but isn't a strong regression guard on its
+    own: the real incident needed two separate gunicorn worker processes
+    racing with no shared GIL, and threads within one process racing on
+    .exists()/.touch() tend to get serialized closely enough by the GIL that
+    this doesn't reliably reproduce the old bug (verified: this test still
+    passed when run against the old, unfixed code). The two control-case
+    tests above are the ones that deterministically prove the fix, by forcing
+    the race with a barrier instead of relying on timing luck."""
+    import time as _time
+
+    def _slow_subprocess_run(*a, **kw):
+        # Real run.sh holds the lock for minutes. Sleeping here keeps the lock
+        # held for the whole burst below, instead of releasing it near-instantly
+        # and letting later stragglers legitimately re-acquire a fresh lock —
+        # which would look like a failure but isn't the bug this test is for.
+        _time.sleep(0.5)
+
+    with patch("sync.webhook.subprocess.run", side_effect=_slow_subprocess_run), \
+         patch("sync.webhook._post_slack", return_value=None):
+        import sync.webhook as wh
+        wh._LOCK_FILE = _Path(_tempfile.mktemp())
+        wh._LOCK_FILE.unlink(missing_ok=True)
+        client = wh.app.test_client()
+        headers = {"X-Secret": os.environ["WEBHOOK_SECRET"]}
+
+        N = 25
+        with concurrent_futures.ThreadPoolExecutor(max_workers=N) as ex:
+            responses = list(ex.map(lambda _: client.post("/run", headers=headers), range(N)))
+
+        started = sum(1 for r in responses if r.status_code == 200)
+        already_running = sum(1 for r in responses if r.status_code == 409)
+        assert started == 1, f"expected exactly 1 request to start the scraper, got {started} (of {N})"
+        assert already_running == N - 1, f"expected the other {N-1} requests to get 409, got {already_running}"
+
+        # Let the stubbed background thread finish its 0.5s sleep and release the lock.
+        for _ in range(50):
+            if not wh._LOCK_FILE.exists():
+                break
+            _time.sleep(0.05)
+        assert not wh._LOCK_FILE.exists(), "lock file was never cleaned up after the run finished"
+test("real /run route: exactly 1 of 25 concurrent requests starts the scraper, rest get 409", _t)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # SUMMARY
 # ═══════════════════════════════════════════════════════════════════════════
 print(f"\n{'═'*60}")

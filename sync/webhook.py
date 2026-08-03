@@ -280,11 +280,12 @@ def run_scraper():
     if err:
         return err
 
-    if _LOCK_FILE.exists():
+    try:
+        fd = os.open(str(_LOCK_FILE), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.close(fd)
+    except FileExistsError:
         _post_slack(":hourglass_flowing_sand: *Scraper already running* — a scrape is already in progress. Check back in a few minutes.")
         return jsonify({"status": "already_running", "message": "A scraper run is already in progress"}), 409
-
-    _LOCK_FILE.touch()
 
     repo_root = Path(__file__).parent.parent
 
