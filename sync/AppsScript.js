@@ -13,7 +13,7 @@ const WEBHOOK_SECRET = PropertiesService.getScriptProperties().getProperty('WEBH
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Job Board')
-    .addItem('Approve job(s) → push to WordPress', 'approveJob')
+    .addItem('Approve skipped job(s) → push to WordPress', 'approveJob')
     .addItem('Add LinkedIn job manually', 'addLinkedInJob')
     .addItem('Remove job(s) from WordPress', 'removeJob')
     .addSeparator()
@@ -33,7 +33,7 @@ function approveJob() {
   const sheet = SpreadsheetApp.getActiveSheet();
 
   if (sheet.getName() !== 'Skipped') {
-    ui.alert('Wrong tab', 'Go to the Skipped tab first, then select the row(s) you want to approve.', ui.ButtonSet.OK);
+    ui.alert('Wrong tab', 'This button is for approving skipped jobs. Go to the Skipped tab first, then select the row(s) you want to approve.', ui.ButtonSet.OK);
     return;
   }
 
@@ -143,7 +143,7 @@ function removeJob() {
   const sheet = SpreadsheetApp.getActiveSheet();
 
   if (sheet.getName() !== 'Jobs') {
-    ui.alert('Wrong tab', 'Go to the Jobs tab first, then select the row(s) you want to remove.', ui.ButtonSet.OK);
+    ui.alert('Wrong tab', 'This button is for removing jobs from WordPress. Go to the Jobs tab first, then select the row(s) you want to remove.', ui.ButtonSet.OK);
     return;
   }
 
